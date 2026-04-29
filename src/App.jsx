@@ -103,6 +103,8 @@ export default function App() {
   const [editTpl, setEditTpl]           = useState(null);
   const [expandedStudent, setExpandedStudent] = useState(null);
   const [selEx, setSelEx]               = useState('');
+  const [showImport, setShowImport]     = useState(false);
+  const [importState, setImportState]   = useState({ loading: false, error: null, result: null });
 
   useEffect(() => { loadTemplates(); }, []);
   useEffect(() => { if (student) loadLogs(student); }, [student]);
@@ -200,6 +202,74 @@ export default function App() {
     if (!confirm('Remover esse treino?')) return;
     await sb.del('templates', `id=eq.${id}`);
     await loadTemplates();
+  };
+
+  const importFromPDF = async (file) => {
+    setImportState({ loading: true, error: null, result: null });
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.onerror = () => rej(new Error('Erro ao ler PDF'));
+        r.readAsDataURL(file);
+      });
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+              },
+              {
+                type: 'text',
+                text: `Analise este PDF de treino e extraia os treinos presentes. Responda APENAS com um JSON válido, sem texto adicional, sem markdown, sem blocos de código. Formato exato:
+[
+  {
+    "name": "Treino A",
+    "description": "descrição breve",
+    "exercises": [
+      {
+        "name": "nome do exercicio",
+        "plannedSets": 3,
+        "plannedReps": "8-10",
+        "plannedLoad": "60kg",
+        "cues": "dica técnica se houver"
+      }
+    ]
+  }
+]
+Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets deve ser número inteiro.`,
+              },
+            ],
+          }],
+        }),
+      });
+
+      const data = await response.json();
+      const text = data.content?.find(b => b.type === 'text')?.text || '';
+      const clean = text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      setImportState({ loading: false, error: null, result: parsed });
+    } catch (e) {
+      setImportState({ loading: false, error: 'Não foi possível extrair os treinos. Verifique se o PDF contém texto legível.', result: null });
+    }
+  };
+
+  const confirmImport = async (treinos) => {
+    for (const t of treinos) {
+      const id = String(Date.now()) + Math.random().toString(36).slice(2);
+      await sb.upsert('templates', { ...t, id });
+    }
+    await loadTemplates();
+    setImportState({ loading: false, error: null, result: null });
+    setShowImport(false);
   };
 
   const exNames = useMemo(() => {
@@ -709,9 +779,84 @@ export default function App() {
 
             {!loading && coachTab==='templates' && !editTpl && (
               <div>
-                <button style={{...st.btnP,marginBottom:20}} onClick={()=>setEditTpl({id:null,name:'',description:'',exercises:[]})}>
-                  + CADASTRAR NOVO TREINO
-                </button>
+                <div style={{display:'flex',gap:10,marginBottom:20}}>
+                  <button style={st.btnP} onClick={()=>setEditTpl({id:null,name:'',description:'',exercises:[]})}>
+                    + CADASTRAR MANUAL
+                  </button>
+                  <button style={{...st.btnS,display:'flex',alignItems:'center',gap:8}} onClick={()=>{setShowImport(true);setImportState({loading:false,error:null,result:null});}}>
+                    📄 IMPORTAR VIA PDF
+                  </button>
+                </div>
+
+                {/* Modal importação PDF */}
+                {showImport && (
+                  <div style={{background:SURF,border:`1px solid ${ACC}`,borderRadius:12,padding:'24px',marginBottom:20}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                      <span style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:2,color:ACC}}>IMPORTAR TREINO VIA PDF</span>
+                      <button style={st.btnG} onClick={()=>setShowImport(false)}>✕ Fechar</button>
+                    </div>
+                    <p style={{fontSize:13,color:MUTED,marginBottom:16}}>
+                      Suba um PDF com seu mural de treino, planilha ou qualquer documento com exercícios. A IA vai extrair e montar os templates automaticamente.
+                    </p>
+
+                    {!importState.loading && !importState.result && (
+                      <label style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:`2px dashed ${BDR}`,borderRadius:10,padding:'40px',cursor:'pointer',background:SURF2}}>
+                        <span style={{fontSize:32,marginBottom:12}}>📄</span>
+                        <span style={{color:ACC,fontWeight:700,marginBottom:4}}>Clique para selecionar o PDF</span>
+                        <span style={{fontSize:12,color:MUTED}}>ou arraste o arquivo aqui</span>
+                        <input type="file" accept=".pdf" style={{display:'none'}}
+                          onChange={e => e.target.files[0] && importFromPDF(e.target.files[0])} />
+                      </label>
+                    )}
+
+                    {importState.loading && (
+                      <div style={{textAlign:'center',padding:'40px'}}>
+                        <div style={{width:40,height:40,border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}} />
+                        <p style={{color:MUTED}}>Analisando PDF com IA...</p>
+                        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                      </div>
+                    )}
+
+                    {importState.error && (
+                      <div style={{background:'#1A0000',border:`1px solid #330000`,borderRadius:8,padding:'16px',color:DANGER,fontSize:13}}>
+                        ⚠️ {importState.error}
+                        <br/><button style={{...st.btnS,marginTop:10,fontSize:12}} onClick={()=>setImportState({loading:false,error:null,result:null})}>Tentar novamente</button>
+                      </div>
+                    )}
+
+                    {importState.result && (
+                      <div>
+                        <div style={{fontSize:13,color:ACC,marginBottom:14,fontWeight:700}}>
+                          ✅ {importState.result.length} treino{importState.result.length!==1?'s':''} encontrado{importState.result.length!==1?'s':''}. Revise antes de salvar:
+                        </div>
+                        {importState.result.map((t,i)=>(
+                          <div key={i} style={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:8,padding:'16px',marginBottom:10}}>
+                            <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:ACC,marginBottom:4}}>{t.name}</div>
+                            {t.description&&<div style={{fontSize:12,color:MUTED,marginBottom:8}}>{t.description}</div>}
+                            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                              {t.exercises.map((ex,j)=>(
+                                <div key={j} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'4px 0',borderBottom:`1px solid ${BDR}`}}>
+                                  <span style={{color:'#CCC'}}>{ex.name}</span>
+                                  <span style={{fontFamily:"'JetBrains Mono',monospace",color:MUTED}}>
+                                    {ex.plannedSets}x{ex.plannedReps}{ex.plannedLoad?' @ '+ex.plannedLoad:''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        <div style={{display:'flex',gap:10,marginTop:16}}>
+                          <button style={st.btnS} onClick={()=>setImportState({loading:false,error:null,result:null})}>
+                            ↩ Reimportar
+                          </button>
+                          <button style={st.btnP} onClick={()=>confirmImport(importState.result)}>
+                            💾 SALVAR TODOS OS TREINOS
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {templates.length===0&&(
                   <div style={{...st.card,textAlign:'center',padding:'48px',border:`2px dashed ${BDR}`}}>
                     <p style={{color:MUTED}}>Nenhum treino cadastrado. Crie o Treino A, B, C...</p>
