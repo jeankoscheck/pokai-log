@@ -46,8 +46,19 @@ export default async function handler(req, res) {
     }
 
     const text = data.content && data.content[0] && data.content[0].text ? data.content[0].text : '';
-    const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    
+    // Tenta extrair JSON do texto mesmo que tenha texto extra
+    let parsed;
+    try {
+      // Primeiro tenta parse direto
+      const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsed = JSON.parse(clean);
+    } catch {
+      // Se falhar, tenta encontrar o array JSON dentro do texto
+      const match = text.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('Nenhum JSON encontrado na resposta');
+      parsed = JSON.parse(match[0]);
+    }
 
     return res.status(200).json({ treinos: parsed });
   } catch (e) {
