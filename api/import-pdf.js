@@ -16,46 +16,42 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-            },
-            {
-              type: 'text',
-              text: `Analise este PDF de treino e extraia os treinos presentes. Responda APENAS com um JSON válido, sem texto adicional, sem markdown, sem blocos de código. Formato exato:
-[
-  {
-    "name": "Treino A",
-    "description": "descrição breve",
-    "exercises": [
-      {
-        "name": "nome do exercicio",
-        "plannedSets": 3,
-        "plannedReps": "8-10",
-        "plannedLoad": "60kg",
-        "cues": "dica técnica se houver"
-      }
-    ]
-  }
-]
-Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets deve ser número inteiro.`,
-            },
-          ],
-        }),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: {
+                  type: 'base64',
+                  media_type: 'application/pdf',
+                  data: pdfBase64,
+                },
+              },
+              {
+                type: 'text',
+                text: 'Analise este PDF de treino e extraia os treinos presentes. Responda APENAS com um JSON valido, sem texto adicional, sem markdown, sem blocos de codigo. Formato exato: [{"name":"Treino A","description":"descricao breve","exercises":[{"name":"nome do exercicio","plannedSets":3,"plannedReps":"8-10","plannedLoad":"60kg","cues":"dica tecnica se houver"}]}]. Se houver multiplos treinos (A, B, C...), retorne todos no array. plannedSets deve ser numero inteiro.',
+              },
+            ],
+          },
+        ],
       }),
     });
 
     const data = await response.json();
-    const text = data.content?.find(b => b.type === 'text')?.text || '';
-    const clean = text.replace(/```json|```/g, '').trim();
+
+    if (!response.ok) {
+      console.error('Anthropic error:', data);
+      return res.status(500).json({ error: 'Erro na API da Anthropic', detail: data });
+    }
+
+    const text = data.content && data.content[0] && data.content[0].text ? data.content[0].text : '';
+    const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(clean);
 
-    res.status(200).json({ treinos: parsed });
+    return res.status(200).json({ treinos: parsed });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Erro ao processar PDF' });
+    console.error('Handler error:', e);
+    return res.status(500).json({ error: 'Erro ao processar PDF', detail: e.message });
   }
 }
