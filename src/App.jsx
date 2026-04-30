@@ -6,7 +6,6 @@ const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&
 const BG='#060606', SURF='#0F0F0F', SURF2='#181818', BDR='#272727', ACC='#8DC63F', TEXT='#F2F2F0', MUTED='#666660';
 const WARN='#E8A020', DANGER='#E05050';
 
-// ── Supabase client ──────────────────────────────────────────────────────────
 const SB_URL = 'https://xvyvqmvcjwvedfkdygco.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2eXZxbXZjand2ZWRma2R5Z2NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNjI1MDQsImV4cCI6MjA5MjYzODUwNH0.WYunV6-RzcxuVGjrp5jMLo5Lsyi1OHxYVRXC7ktvJfY';
 const HDR = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' };
@@ -37,7 +36,6 @@ const sb = {
     } catch (e) { console.error('sb.del', e); return false; }
   },
 };
-// ────────────────────────────────────────────────────────────────────────────
 
 const EMPTY_SET = { reps:'', load:'', completed:true, notes:'' };
 const EMPTY_TPL_EX = { name:'', plannedSets:3, plannedReps:'', plannedLoad:'', cues:'' };
@@ -99,12 +97,12 @@ export default function App() {
   const [selWeek, setSelWeek]   = useState('');
   const [logData, setLogData]   = useState(null);
 
-  const [coachTab, setCoachTab]         = useState('alunos');
-  const [editTpl, setEditTpl]           = useState(null);
+  const [coachTab, setCoachTab]               = useState('alunos');
+  const [editTpl, setEditTpl]                 = useState(null);
   const [expandedStudent, setExpandedStudent] = useState(null);
-  const [selEx, setSelEx]               = useState('');
-  const [showImport, setShowImport]     = useState(false);
-  const [importState, setImportState]   = useState({ loading: false, error: null, result: null });
+  const [selEx, setSelEx]                     = useState('');
+  const [showImport, setShowImport]           = useState(false);
+  const [importState, setImportState]         = useState({ loading: false, error: null, result: null });
 
   useEffect(() => { loadTemplates(); }, []);
   useEffect(() => { if (student) loadLogs(student); }, [student]);
@@ -170,17 +168,10 @@ export default function App() {
     setLoading(true);
     const id = logData.id || String(Date.now());
     await sb.upsert('logs', {
-      id,
-      student_id:    student,
-      date:          logData.date,
-      week:          logData.week,
-      template_id:   logData.templateId,
-      template_name: logData.templateName,
-      exercises:     logData.exercises,
-      rpe:           logData.rpe,
-      energy:        logData.energy,
-      highlights:    logData.highlights,
-      notes:         logData.notes,
+      id, student_id: student, date: logData.date, week: logData.week,
+      template_id: logData.templateId, template_name: logData.templateName,
+      exercises: logData.exercises, rpe: logData.rpe, energy: logData.energy,
+      highlights: logData.highlights, notes: logData.notes,
     });
     await loadLogs(student);
     setView('dash');
@@ -188,8 +179,8 @@ export default function App() {
   };
 
   const updSet = (ei,si,f,v) => setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.map((s,j)=>j===si?{...s,[f]:v}:s)}:e)}));
-  const addSet = (ei)        => setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:[...e.sets,{...EMPTY_SET}]}:e)}));
-  const remSet = (ei,si)     => setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.filter((_,j)=>j!==si)}:e)}));
+  const addSet = (ei) => setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:[...e.sets,{...EMPTY_SET}]}:e)}));
+  const remSet = (ei,si) => setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.filter((_,j)=>j!==si)}:e)}));
 
   const saveTpl = async (tpl) => {
     const id = tpl.id || String(Date.now());
@@ -207,60 +198,22 @@ export default function App() {
   const importFromPDF = async (file) => {
     setImportState({ loading: true, error: null, result: null });
     try {
-      const base64 = await new Promise((res, rej) => {
+      const pdfBase64 = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result.split(',')[1]);
         r.onerror = () => rej(new Error('Erro ao ler PDF'));
         r.readAsDataURL(file);
       });
 
-      const apiKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ANTHROPIC_API_KEY) || window.__ANTHROPIC_KEY__;
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/import-pdf', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { 'x-api-key': apiKey, 'anthropic-dangerous-direct-browser-access': 'true' } : {}),
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'document',
-                source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-              },
-              {
-                type: 'text',
-                text: `Analise este PDF de treino e extraia os treinos presentes. Responda APENAS com um JSON válido, sem texto adicional, sem markdown, sem blocos de código. Formato exato:
-[
-  {
-    "name": "Treino A",
-    "description": "descrição breve",
-    "exercises": [
-      {
-        "name": "nome do exercicio",
-        "plannedSets": 3,
-        "plannedReps": "8-10",
-        "plannedLoad": "60kg",
-        "cues": "dica técnica se houver"
-      }
-    ]
-  }
-]
-Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets deve ser número inteiro.`,
-              },
-            ],
-          }],
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfBase64 }),
       });
 
       const data = await response.json();
-      const text = data.content?.find(b => b.type === 'text')?.text || '';
-      const clean = text.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(clean);
-      setImportState({ loading: false, error: null, result: parsed });
+      if (!response.ok) throw new Error(data.error || 'Erro desconhecido');
+      setImportState({ loading: false, error: null, result: data.treinos });
     } catch (e) {
       setImportState({ loading: false, error: 'Não foi possível extrair os treinos. Verifique se o PDF contém texto legível.', result: null });
     }
@@ -309,7 +262,6 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
     return { done: done.length, total: ex.sets.length, maxLoad, vol };
   };
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <div style={st.app}>
       <style>{FONTS}</style>
@@ -356,8 +308,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
         )}
 
         {/* DASHBOARD */}
-        {view==='dash' && (
-          loading ? <Spin /> :
+        {view==='dash' && (loading ? <Spin /> :
           <div>
             <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:3,color:ACC,margin:'0 0 20px'}}>
               BEM-VINDO, {student.split(' ')[0].toUpperCase()} 🌿
@@ -410,7 +361,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
               <h1 style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:3,color:ACC,margin:0}}>QUAL TREINO DE HOJE?</h1>
             </div>
             <div style={{...st.sect,marginBottom:20}}>
-              <F label="Semana atual (ex: Semana 1, Semana 12)">
+              <F label="Semana atual">
                 <Inp value={selWeek} onChange={e=>setSelWeek(e.target.value)} placeholder="Ex: Semana 3" />
               </F>
             </div>
@@ -472,7 +423,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                 <div style={{overflowX:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',minWidth:360}}>
                     <thead>
-                      <tr>{['Série','Reps realizadas','Carga (kg)','Concluiu?','Obs da série',''].map(h=><th key={h} style={st.th}>{h}</th>)}</tr>
+                      <tr>{['Série','Reps','Carga (kg)','Concluiu?','Obs',''].map(h=><th key={h} style={st.th}>{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {ex.sets.map((set,si)=>(
@@ -496,7 +447,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                             }}>{set.completed?'✓':''}</div>
                           </td>
                           <td style={st.td}>
-                            <input placeholder="dor, dificuldade..."
+                            <input placeholder="obs..."
                               style={{...st.inp,padding:'5px 8px',width:130,fontSize:12}}
                               value={set.notes} onChange={e=>updSet(ei,si,'notes',e.target.value)} />
                           </td>
@@ -516,23 +467,22 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
             <div style={st.sect}>
               <span style={st.sectT}>AVALIAÇÃO DA SESSÃO</span>
               <div style={st.g2}>
-                <F label={`Esforço percebido — RPE ${logData.rpe}/10`}>
+                <F label={`RPE ${logData.rpe}/10`}>
                   <input type="range" min="1" max="10" value={logData.rpe}
                     onChange={e=>setLogData(p=>({...p,rpe:Number(e.target.value)}))}
                     style={{width:'100%',accentColor:ACC,marginTop:8}} />
                 </F>
-                <F label="Energia no treino">
+                <F label="Energia">
                   <Sel value={logData.energy} onChange={e=>setLogData(p=>({...p,energy:e.target.value}))} opts={['baixa','média','alta']} />
                 </F>
               </div>
-              <F label="Destaques — o que foi bem ✨">
-                <Inp value={logData.highlights} onChange={e=>setLogData(p=>({...p,highlights:e.target.value}))}
-                  placeholder="Ex: bati PR no agachamento, senti menos dor no joelho..." />
+              <F label="Destaques ✨">
+                <Inp value={logData.highlights} onChange={e=>setLogData(p=>({...p,highlights:e.target.value}))} placeholder="Ex: bati PR no agachamento..." />
               </F>
-              <F label="Dificuldades, dores ou dúvidas para o professor">
+              <F label="Obs para o professor">
                 <textarea style={{...st.inp,minHeight:72,resize:'vertical'}}
                   value={logData.notes} onChange={e=>setLogData(p=>({...p,notes:e.target.value}))}
-                  placeholder="Tudo que o professor precisa saber sobre como foi esse treino..." />
+                  placeholder="Dores, dificuldades, dúvidas..." />
               </F>
             </div>
             <div style={{display:'flex',justifyContent:'flex-end',gap:10}}>
@@ -545,8 +495,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
         )}
 
         {/* HISTORY */}
-        {view==='history' && (
-          loading ? <Spin /> :
+        {view==='history' && (loading ? <Spin /> :
           <div>
             <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:3,color:ACC,marginBottom:22}}>HISTÓRICO DE TREINOS</h1>
             {logs.length===0 && (
@@ -605,8 +554,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
         )}
 
         {/* PROGRESS */}
-        {view==='progress' && (
-          loading ? <Spin /> :
+        {view==='progress' && (loading ? <Spin /> :
           <div>
             <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:3,color:ACC,marginBottom:22}}>MINHA EVOLUÇÃO</h1>
             {exNames.length===0 ? (
@@ -625,9 +573,9 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                   <>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
                       {[
-                        ['Carga máxima atual', progressData[progressData.length-1]?.maxLoad ? progressData[progressData.length-1].maxLoad+' kg':'—'],
+                        ['Carga máxima', progressData[progressData.length-1]?.maxLoad ? progressData[progressData.length-1].maxLoad+' kg':'—'],
                         ['Melhor volume', Math.max(...progressData.map(d=>d.volume))+' kg'],
-                        ['Sessões com esse exercício', progressData.length],
+                        ['Sessões', progressData.length],
                       ].map(([k,v])=>(
                         <div key={k} style={{background:SURF,border:`1px solid ${BDR}`,borderRadius:8,padding:'12px 16px',textAlign:'center'}}>
                           <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:ACC}}>{v}</div>
@@ -636,7 +584,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                       ))}
                     </div>
                     <div style={st.sect}>
-                      <span style={st.sectT}>CARGA MÁXIMA — {selEx.toUpperCase()}</span>
+                      <span style={st.sectT}>CARGA MÁXIMA</span>
                       <ResponsiveContainer width="100%" height={220}>
                         <LineChart data={progressData} margin={{top:5,right:10,left:0,bottom:5}}>
                           <CartesianGrid strokeDasharray="3 3" stroke={BDR} />
@@ -648,7 +596,7 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                       </ResponsiveContainer>
                     </div>
                     <div style={st.sect}>
-                      <span style={st.sectT}>VOLUME TOTAL — {selEx.toUpperCase()}</span>
+                      <span style={st.sectT}>VOLUME TOTAL</span>
                       <ResponsiveContainer width="100%" height={180}>
                         <LineChart data={progressData} margin={{top:5,right:10,left:0,bottom:5}}>
                           <CartesianGrid strokeDasharray="3 3" stroke={BDR} />
@@ -728,7 +676,6 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                             <span>🏋️ {sLogs.length} treinos</span>
                             <span>🔥 {lastWeek} essa semana</span>
                             {last&&<span>📅 Último: {last.date}</span>}
-                            {last?.week&&<span>📍 {last.week}</span>}
                           </div>
                         </div>
                         <span style={{color:MUTED,fontSize:18}}>{open?'▲':'▼'}</span>
@@ -737,8 +684,8 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                         <div style={{marginTop:16,borderTop:`1px solid ${BDR}`,paddingTop:16}}>
                           {last&&(
                             <div style={{background:SURF2,padding:'14px 16px',borderRadius:8,marginBottom:14}}>
-                              <div style={{fontSize:11,color:MUTED,marginBottom:10,letterSpacing:1}}>
-                                ÚLTIMO TREINO — {last.template_name||'Treino'} · {last.date} {last.week&&`· ${last.week}`}
+                              <div style={{fontSize:11,color:MUTED,marginBottom:10}}>
+                                ÚLTIMO TREINO — {last.template_name||'Treino'} · {last.date}
                               </div>
                               <table style={{width:'100%',borderCollapse:'collapse'}}>
                                 <thead><tr>{['Exercício','Planejado','Séries','Melhor carga'].map(h=><th key={h} style={{...st.th,fontSize:10}}>{h}</th>)}</tr></thead>
@@ -787,12 +734,11 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                   <button style={st.btnP} onClick={()=>setEditTpl({id:null,name:'',description:'',exercises:[]})}>
                     + CADASTRAR MANUAL
                   </button>
-                  <button style={{...st.btnS,display:'flex',alignItems:'center',gap:8}} onClick={()=>{setShowImport(true);setImportState({loading:false,error:null,result:null});}}>
+                  <button style={st.btnS} onClick={()=>{setShowImport(true);setImportState({loading:false,error:null,result:null});}}>
                     📄 IMPORTAR VIA PDF
                   </button>
                 </div>
 
-                {/* Modal importação PDF */}
                 {showImport && (
                   <div style={{background:SURF,border:`1px solid ${ACC}`,borderRadius:12,padding:'24px',marginBottom:20}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
@@ -800,19 +746,17 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                       <button style={st.btnG} onClick={()=>setShowImport(false)}>✕ Fechar</button>
                     </div>
                     <p style={{fontSize:13,color:MUTED,marginBottom:16}}>
-                      Suba um PDF com seu mural de treino, planilha ou qualquer documento com exercícios. A IA vai extrair e montar os templates automaticamente.
+                      Suba um PDF com seu mural de treino. A IA extrai e monta os templates automaticamente.
                     </p>
-
                     {!importState.loading && !importState.result && (
                       <label style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:`2px dashed ${BDR}`,borderRadius:10,padding:'40px',cursor:'pointer',background:SURF2}}>
                         <span style={{fontSize:32,marginBottom:12}}>📄</span>
                         <span style={{color:ACC,fontWeight:700,marginBottom:4}}>Clique para selecionar o PDF</span>
                         <span style={{fontSize:12,color:MUTED}}>ou arraste o arquivo aqui</span>
                         <input type="file" accept=".pdf" style={{display:'none'}}
-                          onChange={e => e.target.files[0] && importFromPDF(e.target.files[0])} />
+                          onChange={e=>e.target.files[0]&&importFromPDF(e.target.files[0])} />
                       </label>
                     )}
-
                     {importState.loading && (
                       <div style={{textAlign:'center',padding:'40px'}}>
                         <div style={{width:40,height:40,border:`3px solid ${BDR}`,borderTop:`3px solid ${ACC}`,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 16px'}} />
@@ -820,14 +764,12 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
                       </div>
                     )}
-
                     {importState.error && (
                       <div style={{background:'#1A0000',border:`1px solid #330000`,borderRadius:8,padding:'16px',color:DANGER,fontSize:13}}>
                         ⚠️ {importState.error}
                         <br/><button style={{...st.btnS,marginTop:10,fontSize:12}} onClick={()=>setImportState({loading:false,error:null,result:null})}>Tentar novamente</button>
                       </div>
                     )}
-
                     {importState.result && (
                       <div>
                         <div style={{fontSize:13,color:ACC,marginBottom:14,fontWeight:700}}>
@@ -850,18 +792,15 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
                           </div>
                         ))}
                         <div style={{display:'flex',gap:10,marginTop:16}}>
-                          <button style={st.btnS} onClick={()=>setImportState({loading:false,error:null,result:null})}>
-                            ↩ Reimportar
-                          </button>
-                          <button style={st.btnP} onClick={()=>confirmImport(importState.result)}>
-                            💾 SALVAR TODOS OS TREINOS
-                          </button>
+                          <button style={st.btnS} onClick={()=>setImportState({loading:false,error:null,result:null})}>↩ Reimportar</button>
+                          <button style={st.btnP} onClick={()=>confirmImport(importState.result)}>💾 SALVAR TODOS OS TREINOS</button>
                         </div>
                       </div>
                     )}
                   </div>
                 )}
-                {templates.length===0&&(
+
+                {templates.length===0 && (
                   <div style={{...st.card,textAlign:'center',padding:'48px',border:`2px dashed ${BDR}`}}>
                     <p style={{color:MUTED}}>Nenhum treino cadastrado. Crie o Treino A, B, C...</p>
                   </div>
@@ -890,11 +829,10 @@ Se houver múltiplos treinos (A, B, C...), retorne todos no array. plannedSets d
 
             {!loading && coachTab==='templates' && editTpl && (
               <TemplateForm tpl={editTpl} onSave={saveTpl} onCancel={()=>setEditTpl(null)}
-                styles={{st, EMPTY_TPL_EX, ACC, BDR, SURF2, MUTED, TEXT, DANGER}} />
+                styles={{st, EMPTY_TPL_EX, ACC, BDR, SURF2, MUTED, DANGER}} />
             )}
           </div>
         )}
-
       </div>
     </div>
   );
@@ -904,9 +842,9 @@ function TemplateForm({ tpl, onSave, onCancel, styles }) {
   const {st, EMPTY_TPL_EX, ACC, BDR, SURF2, MUTED, DANGER} = styles;
   const [form, setForm] = useState({...tpl});
 
-  const addEx    = ()      => setForm(p=>({...p, exercises:[...p.exercises, {...EMPTY_TPL_EX}]}));
-  const removeEx = i       => setForm(p=>({...p, exercises:p.exercises.filter((_,j)=>j!==i)}));
-  const updEx    = (i,f,v) => setForm(p=>({...p, exercises:p.exercises.map((e,j)=>j===i?{...e,[f]:v}:e)}));
+  const addEx    = ()      => setForm(p=>({...p,exercises:[...p.exercises,{...EMPTY_TPL_EX}]}));
+  const removeEx = i       => setForm(p=>({...p,exercises:p.exercises.filter((_,j)=>j!==i)}));
+  const updEx    = (i,f,v) => setForm(p=>({...p,exercises:p.exercises.map((e,j)=>j===i?{...e,[f]:v}:e)}));
   const moveEx   = (i,dir) => {
     const exs=[...form.exercises]; const to=i+dir;
     if(to<0||to>=exs.length)return;
