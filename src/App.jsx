@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
-import { Home, Calendar, BarChart2, User, Users, ClipboardList, ChevronLeft, ChevronRight, Plus, Edit2, Settings } from "lucide-react";
+import { Home, Calendar, BarChart2, User, Users, ClipboardList, ChevronLeft, ChevronRight, Plus, Edit2, Settings, MessageSquare } from "lucide-react";
 import ProfessorDashboard from "./ProfessorDashboard.jsx";
 
 const FONTS=`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap');`;
@@ -345,6 +345,79 @@ function ExerciseAccordion({exNames,selEx,setSelEx,progressData,st}){
   );
 }
 
+// ── FeedView ──────────────────────────────────────────────────────────────────
+function FeedView({posts,author,isCoach,newText,setNewText,onPost,posting,onLike,comments,commentText,setCommentText,onComment,onLoadComments,expandedPost,setExpandedPost}){
+  const timeAgo=d=>{const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'agora';if(s<3600)return`${Math.floor(s/60)}min`;if(s<86400)return`${Math.floor(s/3600)}h`;return`${Math.floor(s/86400)}d`;};
+  return(
+    <div>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:26,letterSpacing:3,color:ACC,margin:'0 0 16px'}}>MURAL DA MATILHA</div>
+      <div style={{...st.sect,marginBottom:16}}>
+        <textarea value={newText} onChange={e=>setNewText(e.target.value)} placeholder={isCoach?'Mensagem para a matilha...':`Compartilhe seu treino, ${author?.split(' ')[0]}...`} style={{...st.inp,minHeight:84,resize:'none',marginBottom:10,fontSize:14,lineHeight:1.5}} rows={3}/>
+        <div style={{display:'flex',justifyContent:'flex-end'}}>
+          <button style={st.btnP} onClick={onPost} disabled={posting||!newText.trim()}>{posting?'POSTANDO...':'📢 POSTAR'}</button>
+        </div>
+      </div>
+      {posts.length===0&&<div style={{textAlign:'center',padding:'48px 0',color:MUTED,fontSize:13}}>Nenhuma publicação ainda. Seja o primeiro!</div>}
+      {posts.map(post=>{
+        const likes=Array.isArray(post.likes)?post.likes:[];
+        const liked=likes.includes(author);
+        const isExp=expandedPost===post.id;
+        const postComments=comments[post.id]||[];
+        return(
+          <div key={post.id} style={{...st.card,border:`1px solid ${post.is_coach?ACC+'55':BDR}`,marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+              <div style={{display:'flex',alignItems:'center',gap:9}}>
+                <div style={{width:36,height:36,borderRadius:'50%',background:post.is_coach?`rgba(141,198,63,0.12)`:`rgba(255,255,255,0.05)`,border:`1px solid ${post.is_coach?ACC+'44':BDR}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>
+                  {post.is_coach?'👨‍🏫':'🏋️'}
+                </div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:post.is_coach?ACC:TEXT,display:'flex',alignItems:'center',gap:6}}>
+                    {post.author}
+                    {post.is_coach&&<span style={{fontSize:8,color:ACC,letterSpacing:1,background:'rgba(141,198,63,0.12)',padding:'1px 5px',borderRadius:3}}>PROF</span>}
+                  </div>
+                  <div style={{fontSize:10,color:MUTED}}>{timeAgo(post.created_at)}</div>
+                </div>
+              </div>
+            </div>
+            <div style={{fontSize:14,color:'#DDD',lineHeight:1.6,marginBottom:12,whiteSpace:'pre-wrap'}}>{post.content}</div>
+            <div style={{display:'flex',alignItems:'center',gap:14,paddingTop:9,borderTop:`1px solid ${BDR}`}}>
+              <button onClick={()=>onLike(post.id)} style={{background:'none',border:'none',cursor:'pointer',color:liked?DANGER:MUTED,fontSize:13,display:'flex',alignItems:'center',gap:5,fontFamily:"'Outfit',sans-serif",padding:'2px 0',transition:'color 0.15s'}}>
+                {liked?'❤️':'🤍'} <span>{likes.length||''}</span>
+              </button>
+              <button onClick={()=>{const n=isExp?null:post.id;setExpandedPost(n);if(n&&!comments[post.id])onLoadComments(post.id);}} style={{background:'none',border:'none',cursor:'pointer',color:isExp?INFO:MUTED,fontSize:13,display:'flex',alignItems:'center',gap:5,fontFamily:"'Outfit',sans-serif",padding:'2px 0',transition:'color 0.15s'}}>
+                💬 {postComments.length>0?postComments.length:'Comentar'}
+              </button>
+            </div>
+            {isExp&&(
+              <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${BDR}`}}>
+                {postComments.map(c=>(
+                  <div key={c.id} style={{display:'flex',gap:8,marginBottom:10}}>
+                    <div style={{width:28,height:28,borderRadius:'50%',background:c.is_coach?'rgba(141,198,63,0.08)':'rgba(255,255,255,0.04)',border:`1px solid ${c.is_coach?ACC+'44':BDR}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>
+                      {c.is_coach?'👨‍🏫':'🏋️'}
+                    </div>
+                    <div style={{flex:1,background:'rgba(255,255,255,0.03)',borderRadius:9,padding:'8px 12px'}}>
+                      <div style={{fontSize:11,fontWeight:700,color:c.is_coach?ACC:TEXT,marginBottom:3,display:'flex',alignItems:'center',gap:5}}>
+                        {c.author}
+                        {c.is_coach&&<span style={{fontSize:8,color:ACC}}>PROF</span>}
+                        <span style={{fontWeight:400,color:MUTED,marginLeft:'auto'}}>{timeAgo(c.created_at)}</span>
+                      </div>
+                      <div style={{fontSize:13,color:'#CCC',lineHeight:1.45}}>{c.content}</div>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:'flex',gap:8,marginTop:10}}>
+                  <input value={commentText[post.id]||''} onChange={e=>setCommentText(p=>({...p,[post.id]:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&(e.preventDefault(),onComment(post.id))} placeholder="Comentar..." style={{...st.inp,flex:1,padding:'8px 12px',fontSize:13}}/>
+                  <button style={{...st.btnP,padding:'8px 16px',fontSize:12}} onClick={()=>onComment(post.id)} disabled={!(commentText[post.id]||'').trim()}>→</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── LogForm ───────────────────────────────────────────────────────────────────
 function LogForm({logData,setLogData,onSave,onCancel,loading}){
   const updSet=(ei,si,f,v)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.map((s,j)=>j===si?{...s,[f]:v}:s)}:e)}));
@@ -516,9 +589,17 @@ export default function App(){
   const[importState,setImportState]=useState({loading:false,error:null,result:null});
   const[coachCalSel,setCoachCalSel]=useState(todayStr());
   const[coachStudentSel,setCoachStudentSel]=useState(null);
+  const[feedPosts,setFeedPosts]=useState([]);
+  const[feedComments,setFeedComments]=useState({});
+  const[newPostText,setNewPostText]=useState('');
+  const[postingFeed,setPostingFeed]=useState(false);
+  const[feedCommentText,setFeedCommentText]=useState({});
+  const[expandedPost,setExpandedPost]=useState(null);
 
   useEffect(()=>{loadTemplates();},[]);
   useEffect(()=>{if(student){loadLogs(student);loadProfile(student);loadWeightLogs(student);}},[student]);
+  useEffect(()=>{if(view==='mural')loadFeed();},[view]);
+  useEffect(()=>{if(view==='coach'&&coachTab===4)loadFeed();},[coachTab]);
 
   const loadTemplates=async()=>{const d=await sb.get('templates','order=created_at.asc');setTemplates(d||[]);};
   const loadLogs=async(n,silent=false)=>{if(!silent)setLoading(true);const d=await sb.get('logs',`student_id=eq.${encodeURIComponent(n)}&order=date.desc`);setLogs(d||[]);if(!silent)setLoading(false);return d||[];};
@@ -533,6 +614,31 @@ export default function App(){
     const data={},profs={},wls={};
     students.forEach(s=>{data[s.name]=(allLogs).filter(l=>l.student_id===s.name);profs[s.name]=s;wls[s.name]=(allW).filter(l=>l.student_id===s.name);});
     setStudData(data);setStudProfiles(profs);setStudWL(wls);setLoading(false);
+  };
+
+  const loadFeed=async()=>{const d=await sb.get('feed_posts','order=created_at.desc');setFeedPosts(d||[]);};
+  const loadPostComments=async(postId)=>{const d=await sb.get('feed_comments',`post_id=eq.${postId}&order=created_at.asc`);setFeedComments(p=>({...p,[postId]:d||[]}));};
+  const postToFeed=async(isCoachPost=false)=>{
+    const text=newPostText.trim();if(!text)return;
+    setPostingFeed(true);
+    const author=isCoachPost?'Professor':student;
+    await sb.upsert('feed_posts',{id:String(Date.now()),author,is_coach:isCoachPost,content:text,created_at:new Date().toISOString(),likes:[]});
+    setNewPostText('');await loadFeed();setPostingFeed(false);
+  };
+  const likePost=async(postId)=>{
+    const post=feedPosts.find(p=>p.id===postId);if(!post)return;
+    const liker=view==='coach'?'Professor':student;
+    const likes=Array.isArray(post.likes)?post.likes:[];
+    const newLikes=likes.includes(liker)?likes.filter(l=>l!==liker):[...likes,liker];
+    setFeedPosts(prev=>prev.map(p=>p.id===postId?{...p,likes:newLikes}:p));
+    await sb.upsert('feed_posts',{id:post.id,author:post.author,is_coach:post.is_coach,content:post.content,created_at:post.created_at,likes:newLikes});
+  };
+  const addComment=async(postId)=>{
+    const text=(feedCommentText[postId]||'').trim();if(!text)return;
+    const author=view==='coach'?'Professor':student;
+    const isCoachCmt=view==='coach';
+    await sb.upsert('feed_comments',{id:String(Date.now()),post_id:postId,author,is_coach:isCoachCmt,content:text,created_at:new Date().toISOString()});
+    setFeedCommentText(p=>({...p,[postId]:''}));await loadPostComments(postId);
   };
 
   const login=async()=>{
@@ -638,8 +744,8 @@ export default function App(){
   const imc=profile?.weight&&profile?.height?((profile.weight)/((profile.height/100)**2)).toFixed(1):null;
   const weeklyRepsData=useMemo(()=>{const w={};logs.forEach(l=>{if(l.week)w[l.week]=(w[l.week]||0)+totalReps(l);});return Object.entries(w).slice(-6).map(([week,reps])=>({week,reps}));},[logs]);
 
-  const STUDENT_TABS=[{icon:Home,label:'Dashboard'},{icon:Calendar,label:'Treinos'},{icon:BarChart2,label:'Progresso'},{icon:User,label:'Perfil'}];
-  const COACH_TABS=[{icon:Calendar,label:'Calendário'},{icon:Users,label:'Alunos'},{icon:ClipboardList,label:'Treinos'},{icon:Settings,label:'Gestão'}];
+  const STUDENT_TABS=[{icon:Home,label:'Dashboard'},{icon:Calendar,label:'Treinos'},{icon:BarChart2,label:'Progresso'},{icon:User,label:'Perfil'},{icon:MessageSquare,label:'Mural'}];
+  const COACH_TABS=[{icon:Calendar,label:'Calendário'},{icon:Users,label:'Alunos'},{icon:ClipboardList,label:'Treinos'},{icon:Settings,label:'Gestão'},{icon:MessageSquare,label:'Mural'}];
 
   const coachSelDayTpl=coachCalSel?tplByDate[coachCalSel]||null:null;
   const coachSelDayLogs=useMemo(()=>{
@@ -668,7 +774,7 @@ export default function App(){
 
       {/* TopNav */}
       {isLoggedIn&&!isCoach&&(
-        <TopNav items={STUDENT_TABS} active={studentTab} setActive={i=>{setStudentTab(i);if(i===1)setView('calendar');else if(i===0)setView('dash');else if(i===2)setView('progress');else if(i===3)setView('perfil');}}
+        <TopNav items={STUDENT_TABS} active={studentTab} setActive={i=>{setStudentTab(i);if(i===0)setView('dash');else if(i===1)setView('calendar');else if(i===2)setView('progress');else if(i===3)setView('perfil');else if(i===4)setView('mural');}}
           rightSlot={<span style={{fontSize:11,color:MUTED}}>👤 {student.split(' ')[0]}</span>}/>
       )}
       {isCoach&&(
@@ -979,6 +1085,11 @@ export default function App(){
           </div>
         )}
 
+        {/* MURAL */}
+        {view==='mural'&&(
+          <FeedView posts={feedPosts} author={student} isCoach={false} newText={newPostText} setNewText={setNewPostText} onPost={()=>postToFeed(false)} posting={postingFeed} onLike={likePost} comments={feedComments} commentText={feedCommentText} setCommentText={setFeedCommentText} onComment={addComment} onLoadComments={loadPostComments} expandedPost={expandedPost} setExpandedPost={setExpandedPost}/>
+        )}
+
         {/* COACH */}
         {view==='coach'&&(
           <div>
@@ -1213,6 +1324,9 @@ export default function App(){
             )}
             {!loading&&coachTab===2&&editTpl&&<TemplateForm tpl={editTpl} onSave={saveTpl} onCancel={()=>setEditTpl(null)}/>}
             {coachTab===3&&<ProfessorDashboard allStudents={allStudents} studProfiles={studProfiles}/>}
+            {coachTab===4&&(
+              <FeedView posts={feedPosts} author="Professor" isCoach={true} newText={newPostText} setNewText={setNewPostText} onPost={()=>postToFeed(true)} posting={postingFeed} onLike={likePost} comments={feedComments} commentText={feedCommentText} setCommentText={setFeedCommentText} onComment={addComment} onLoadComments={loadPostComments} expandedPost={expandedPost} setExpandedPost={setExpandedPost}/>
+            )}
           </div>
         )}
       </div>
