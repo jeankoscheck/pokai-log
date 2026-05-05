@@ -1,20 +1,26 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 import { Home, Calendar, BarChart2, User, Users, ClipboardList, ChevronLeft, ChevronRight, Plus, Edit2, Settings, MessageSquare } from "lucide-react";
 import ProfessorDashboard from "./ProfessorDashboard.jsx";
 
 const FONTS=`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap');`;
 const BG='#060606',SURF='#0F0F0F',SURF2='#181818',BDR='#272727',ACC='#8DC63F',TEXT='#F2F2F0',MUTED='#666660',WARN='#E8A020',DANGER='#E05050',INFO='#5BC8F5';
-const SB_URL='https://xvyvqmvcjwvedfkdygco.supabase.co';
-const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2eXZxbXZjand2ZWRma2R5Z2NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNjI1MDQsImV4cCI6MjA5MjYzODUwNH0.WYunV6-RzcxuVGjrp5jMLo5Lsyi1OHxYVRXC7ktvJfY';
+const SB_URL=import.meta.env.VITE_SUPABASE_URL;
+const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY;
+const COACH_PWD=import.meta.env.VITE_COACH_PASSWORD;
 const HDR={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
 const MONTHS=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const DAY_LETTERS=['D','S','T','Q','Q','S','S'];
 
+// ── Módulo de Toast/Confirm (state global ligado ao App) ───────────────────
+let _setToast=null,_setConfirm=null;
+const showToast=(msg,type='info')=>_setToast?.({msg,type,id:Date.now()});
+const askConfirm=(msg)=>new Promise(r=>{if(_setConfirm)_setConfirm({msg,resolve:r});else r(window.confirm(msg));});
+
 const sb={
-  async get(t,q=''){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok)throw new Error(await r.text());return r.json();}catch(e){console.error(e);return null;}},
-  async upsert(t,d){try{const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(d)});if(!r.ok)throw new Error(await r.text());return r.json();}catch(e){console.error(e);return null;}},
-  async del(t,q){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{method:'DELETE',headers:HDR});return r.ok;}catch(e){console.error(e);return false;}},
+  async get(t,q=''){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok){showToast('Erro ao buscar dados','error');return null;}return r.json();}catch{showToast('Sem conexão com servidor','error');return null;}},
+  async upsert(t,d){try{const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(d)});if(!r.ok){showToast('Erro ao salvar','error');return null;}return r.json();}catch{showToast('Sem conexão com servidor','error');return null;}},
+  async del(t,q){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{method:'DELETE',headers:HDR});if(!r.ok)showToast('Erro ao excluir','error');return r.ok;}catch{showToast('Sem conexão com servidor','error');return false;}},
 };
 
 const PAIN_WORDS=['dor','dói','doendo','machucou','machucar','lesão','ardendo','inflamado','travado','travei','torci','torção','queimou','incômodo','desconforto'];
@@ -69,6 +75,54 @@ const st={
   th:{textAlign:'left',padding:'8px 10px',background:'rgba(141,198,63,0.07)',color:ACC,fontSize:10,fontWeight:700,letterSpacing:1},
   td:{padding:'7px 10px',borderBottom:`1px solid ${BDR}`,fontSize:13,color:'#CCC'},
 };
+
+// ── ErrorBoundary ─────────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return{err:e};}
+  render(){
+    if(this.state.err)return(
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:BG,color:TEXT,textAlign:'center',padding:24,fontFamily:"'Outfit',sans-serif"}}>
+        <div style={{fontFamily:"'Bebas Neue'",fontSize:32,letterSpacing:3,color:DANGER,marginBottom:12}}>ALGO DEU ERRADO</div>
+        <p style={{color:MUTED,fontSize:13,marginBottom:20,maxWidth:320}}>{String(this.state.err)}</p>
+        <button onClick={()=>window.location.reload()} style={{padding:'10px 24px',background:ACC,color:'#000',border:'none',borderRadius:6,cursor:'pointer',fontSize:13,fontWeight:700}}>↺ Recarregar</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function Toast({data,onClose}){
+  if(!data)return null;
+  const color=data.type==='error'?DANGER:data.type==='success'?ACC:INFO;
+  const bg=data.type==='error'?'rgba(60,0,0,0.96)':data.type==='success'?'rgba(0,35,0,0.96)':'rgba(0,20,50,0.96)';
+  useEffect(()=>{const t=setTimeout(onClose,3500);return()=>clearTimeout(t);},[data.id]);
+  return(
+    <div style={{position:'fixed',bottom:28,left:'50%',transform:'translateX(-50%)',zIndex:9999,background:bg,backdropFilter:'blur(14px)',WebkitBackdropFilter:'blur(14px)',border:`1px solid ${color}44`,borderRadius:10,padding:'11px 20px',color,fontSize:13,fontWeight:600,boxShadow:'0 8px 32px rgba(0,0,0,0.65)',display:'flex',gap:14,alignItems:'center',minWidth:220,maxWidth:'88vw',fontFamily:"'Outfit',sans-serif"}}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
+      <span style={{flex:1}}>{data.msg}</span>
+      <button onClick={onClose} style={{background:'none',border:'none',color,cursor:'pointer',fontSize:18,lineHeight:1,padding:0,opacity:0.7}}>✕</button>
+    </div>
+  );
+}
+
+// ── ConfirmModal ───────────────────────────────────────────────────────────────
+function ConfirmModal({data,onConfirm,onCancel}){
+  if(!data)return null;
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:9998,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.78)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'}}>
+      <div style={{background:'rgba(14,14,14,0.99)',border:`1px solid ${BDR}`,borderRadius:14,padding:'28px 24px',maxWidth:320,width:'88%',textAlign:'center',boxShadow:'0 24px 64px rgba(0,0,0,0.75)',fontFamily:"'Outfit',sans-serif"}}>
+        <div style={{fontSize:30,marginBottom:14}}>⚠️</div>
+        <p style={{color:TEXT,fontSize:15,lineHeight:1.55,marginBottom:24}}>{data.msg}</p>
+        <div style={{display:'flex',gap:10,justifyContent:'center'}}>
+          <button style={{padding:'9px 22px',background:SURF2,color:TEXT,border:`1px solid ${BDR}`,borderRadius:6,cursor:'pointer',fontSize:13,fontFamily:"'Outfit',sans-serif"}} onClick={onCancel}>Cancelar</button>
+          <button style={{padding:'9px 22px',background:'rgba(224,80,80,0.15)',color:DANGER,border:`1px solid rgba(224,80,80,0.35)`,borderRadius:6,cursor:'pointer',fontSize:13,fontFamily:"'Outfit',sans-serif",fontWeight:700}} onClick={onConfirm}>Confirmar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── BGPattern dots + fade-center ─────────────────────────────────────────────
 function BGPattern(){
@@ -181,7 +235,8 @@ function GlassCalendar({logMap,tplMap,selDate,onDayClick,coachMode=false}){
         {MONTHS[month]} <span style={{fontSize:16,color:MUTED,letterSpacing:1}}>{year}</span>
       </div>
 
-      {/* Scrollable days */}
+      {/* Weekly: scroll horizontal */}
+      {calView==='Weekly'&&(
       <div style={{overflowX:'auto',margin:'0 -18px',padding:'0 18px',scrollbarWidth:'none',msOverflowStyle:'none'}}>
         <style>{`.gcal-scroll::-webkit-scrollbar{display:none}`}</style>
         <div ref={scrollRef} className="gcal-scroll" style={{display:'flex',gap:6,width:'max-content'}}>
@@ -207,6 +262,34 @@ function GlassCalendar({logMap,tplMap,selDate,onDayClick,coachMode=false}){
           })}
         </div>
       </div>
+      )}
+
+      {/* Monthly: grade 7×N */}
+      {calView==='Monthly'&&(
+      <div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:1,marginBottom:4}}>
+          {['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>(
+            <div key={d} style={{textAlign:'center',fontSize:9,color:MUTED,padding:'4px 0',fontWeight:700}}>{d}</div>
+          ))}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+          {Array.from({length:new Date(year,month,1).getDay()},(_,i)=><div key={`e${i}`}/>)}
+          {days.map(day=>{
+            const dotColor=day.hasPain?DANGER:day.hasLog?ACC:day.hasTpl?WARN:null;
+            return(
+              <div key={day.key} onClick={()=>onDayClick(day.key,day)}
+                style={{aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',borderRadius:8,position:'relative',
+                  background:day.isSelected?`linear-gradient(135deg,${ACC},#5a9e00)`:day.isToday?'rgba(141,198,63,0.1)':'transparent',
+                  border:day.isSelected?'none':day.isToday?`1px solid rgba(141,198,63,0.35)`:'1px solid transparent',
+                  transition:'all 0.15s'}}>
+                <span style={{fontSize:11,fontWeight:600,color:day.isSelected?'#000':'#fff',lineHeight:1}}>{day.date.getDate()}</span>
+                {dotColor&&!day.isSelected&&<div style={{width:4,height:4,borderRadius:'50%',background:dotColor,marginTop:1}}/>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      )}
 
       {/* Selected day info */}
       {selDate&&<div style={{marginTop:12,padding:'10px 12px',background:'rgba(255,255,255,0.04)',borderRadius:10,border:'1px solid rgba(255,255,255,0.06)'}}>
@@ -538,23 +621,34 @@ function TemplateForm({tpl,onSave,onCancel}){
 // ── ProfileSetup ─────────────────────────────────────────────────────────────
 function ProfileSetup({name,onSave,loading}){
   const[form,setForm]=useState({age:'',height:'',weight:'',body_fat:''});
-  const upd=(f,v)=>setForm(p=>({...p,[f]:v}));
+  const[errs,setErrs]=useState({});
+  const upd=(f,v)=>{setForm(p=>({...p,[f]:v}));setErrs(p=>({...p,[f]:null}));};
+  const save=()=>{
+    const e={};
+    if(!form.age)e.age='Obrigatório';
+    if(!form.height)e.height='Obrigatório';
+    if(Object.keys(e).length){setErrs(e);showToast('Preencha os campos obrigatórios','error');return;}
+    onSave({age:parseInt(form.age),height:parseFloat(form.height),weight:form.weight?parseFloat(form.weight):null,body_fat:form.body_fat?parseFloat(form.body_fat):null});
+  };
+  const Req=()=><span style={{color:DANGER,marginLeft:2}}>*</span>;
+  const Err=({k})=>errs[k]?<span style={{color:DANGER,fontSize:10,marginTop:2,display:'block'}}>{errs[k]}</span>:null;
   return(
     <div style={{maxWidth:500,margin:'0 auto'}}>
       <div style={{textAlign:'center',marginBottom:24}}>
         <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:3,color:ACC}}>CADASTRO DO ATLETA</div>
-        <p style={{color:MUTED,fontSize:14}}>Olá, <strong style={{color:'#FFF'}}>{name}</strong>! Complete seu perfil.</p>
+        <p style={{color:MUTED,fontSize:14}}>Olá, <strong style={{color:'#FFF'}}>{name}</strong>! Complete seu perfil para entrar.</p>
+        <p style={{color:WARN,fontSize:11,marginTop:4}}><span style={{color:DANGER}}>*</span> campos obrigatórios</p>
       </div>
       <div style={st.sect}>
         <span style={st.sectT}>DADOS PESSOAIS</span>
         <div style={st.g2}>
-          <div style={st.fld}><label style={st.lbl}>Idade</label><input type="number" placeholder="28" style={st.inp} value={form.age} onChange={e=>upd('age',e.target.value)}/></div>
-          <div style={st.fld}><label style={st.lbl}>Altura (cm)</label><input type="number" placeholder="175" style={st.inp} value={form.height} onChange={e=>upd('height',e.target.value)}/></div>
+          <div style={st.fld}><label style={st.lbl}>Idade<Req/></label><input type="number" placeholder="28" style={{...st.inp,borderColor:errs.age?DANGER:undefined}} value={form.age} onChange={e=>upd('age',e.target.value)}/><Err k="age"/></div>
+          <div style={st.fld}><label style={st.lbl}>Altura (cm)<Req/></label><input type="number" placeholder="175" style={{...st.inp,borderColor:errs.height?DANGER:undefined}} value={form.height} onChange={e=>upd('height',e.target.value)}/><Err k="height"/></div>
           <div style={st.fld}><label style={st.lbl}>Peso (kg)</label><input type="number" step="0.1" placeholder="75.5" style={st.inp} value={form.weight} onChange={e=>upd('weight',e.target.value)}/></div>
           <div style={st.fld}><label style={st.lbl}>% Gordura</label><input type="number" step="0.1" placeholder="18.5" style={st.inp} value={form.body_fat} onChange={e=>upd('body_fat',e.target.value)}/></div>
         </div>
       </div>
-      <button style={{...st.btnP,width:'100%',padding:'13px',fontSize:15}} onClick={()=>onSave({age:form.age?parseInt(form.age):null,height:form.height?parseFloat(form.height):null,weight:form.weight?parseFloat(form.weight):null,body_fat:form.body_fat?parseFloat(form.body_fat):null})} disabled={loading}>
+      <button style={{...st.btnP,width:'100%',padding:'13px',fontSize:15}} onClick={save} disabled={loading}>
         {loading?'SALVANDO...':'ENTRAR NA MATILHA 🐺'}
       </button>
     </div>
@@ -563,11 +657,13 @@ function ProfileSetup({name,onSave,loading}){
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App(){
-  const[view,setView]=useState('login');
-  const[student,setStudent]=useState('');
+  const[view,setView]=useState(()=>localStorage.getItem('pokai_student')?'calendar':'login');
+  const[student,setStudent]=useState(()=>localStorage.getItem('pokai_student')||'');
   const[profile,setProfile]=useState(null);
   const[nameInput,setNameInput]=useState('');
   const[coachPass,setCoachPass]=useState('');
+  const[toast,setToast]=useState(null);
+  const[confirmState,setConfirmState]=useState(null);
   const[loading,setLoading]=useState(false);
   const[logs,setLogs]=useState([]);
   const[weightLogs,setWeightLogs]=useState([]);
@@ -599,14 +695,27 @@ export default function App(){
   const PROFESSORS=['Jean','Marcos','Colônia','Diogo'];
   const[coachName,setCoachName]=useState('Jean');
 
+  useEffect(()=>{
+    _setToast=setToast;
+    _setConfirm=(data)=>setConfirmState(data);
+  },[]);
   useEffect(()=>{loadTemplates();},[]);
   useEffect(()=>{if(student){loadLogs(student);loadProfile(student);loadWeightLogs(student);}},[student]);
   useEffect(()=>{if(view==='mural')loadFeed();},[view]);
   useEffect(()=>{if(view==='coach'&&coachTab===4)loadFeed();},[coachTab]);
 
+  const logout=()=>{
+    localStorage.removeItem('pokai_student');
+    setStudent('');setProfile(null);setLogs([]);setWeightLogs([]);
+    setStudentTab(0);setView('login');
+  };
+
   const loadTemplates=async()=>{const d=await sb.get('templates','order=created_at.asc');setTemplates(d||[]);};
   const loadLogs=async(n,silent=false)=>{if(!silent)setLoading(true);const d=await sb.get('logs',`student_id=eq.${encodeURIComponent(n)}&order=date.desc`);setLogs(d||[]);if(!silent)setLoading(false);return d||[];};
-  const loadProfile=async(n)=>{const d=await sb.get('students',`id=eq.${encodeURIComponent(n)}`);if(d?.[0])setProfile(d[0]);};
+  const loadProfile=async(n)=>{
+    const d=await sb.get('students',`id=eq.${encodeURIComponent(n)}`);
+    if(d?.[0]){setProfile(d[0]);if(!d[0]?.age||!d[0]?.height)setView(v=>v==='login'?v:'profile-setup');}
+  };
   const loadWeightLogs=async(n)=>{const d=await sb.get('weight_logs',`student_id=eq.${encodeURIComponent(n)}&order=date.asc`);setWeightLogs(d||[]);};
   const loadCoach=async()=>{
     setLoading(true);await loadTemplates();
@@ -625,7 +734,7 @@ export default function App(){
     const text=newPostText.trim();if(!text)return;
     setPostingFeed(true);
     const author=isCoachPost?coachName:student;
-    await sb.upsert('feed_posts',{id:String(Date.now()),author,is_coach:isCoachPost,content:text,created_at:new Date().toISOString(),likes:[]});
+    await sb.upsert('feed_posts',{id:crypto.randomUUID(),author,is_coach:isCoachPost,content:text,created_at:new Date().toISOString(),likes:[]});
     setNewPostText('');await loadFeed();setPostingFeed(false);
   };
   const likePost=async(postId)=>{
@@ -640,26 +749,30 @@ export default function App(){
     const text=(feedCommentText[postId]||'').trim();if(!text)return;
     const author=view==='coach'?coachName:student;
     const isCoachCmt=view==='coach';
-    await sb.upsert('feed_comments',{id:String(Date.now()),post_id:postId,author,is_coach:isCoachCmt,content:text,created_at:new Date().toISOString()});
+    await sb.upsert('feed_comments',{id:crypto.randomUUID(),post_id:postId,author,is_coach:isCoachCmt,content:text,created_at:new Date().toISOString()});
     setFeedCommentText(p=>({...p,[postId]:''}));await loadPostComments(postId);
   };
 
   const login=async()=>{
     const raw=nameInput.trim();if(!raw)return;setLoading(true);
-    // Busca case-insensitive para evitar duplicatas por capitalização
     const existing=await sb.get('students',`name=ilike.${encodeURIComponent(raw)}`);
+    if(existing===null){setLoading(false);return;}
     const name=existing?.[0]?.name||raw;
     if(!existing?.[0])await sb.upsert('students',{id:name,name});
+    localStorage.setItem('pokai_student',name);
     setStudent(name);
     const d=await sb.get('students',`id=eq.${encodeURIComponent(name)}`);
     const p=d?.[0];setProfile(p);setLoading(false);
     if(!p?.age||!p?.height){setView('profile-setup');}else{setView('calendar');}
   };
-  const enterCoach=async()=>{if(coachPass==='pokai2026'){await loadCoach();setView('coach');}else alert('Senha incorreta.');};
+  const enterCoach=async()=>{
+    if(coachPass===COACH_PWD){await loadCoach();setView('coach');}
+    else showToast('Senha incorreta','error');
+  };
   const saveProfile=async(data)=>{setLoading(true);await sb.upsert('students',{id:student,name:student,...data});await loadProfile(student);setView('calendar');setLoading(false);};
   const addWeightLog=async()=>{
     if(!newWeight)return;setLoading(true);
-    await sb.upsert('weight_logs',{id:String(Date.now()),student_id:student,date:todayStr(),weight:parseFloat(newWeight),body_fat:newBF?parseFloat(newBF):null});
+    await sb.upsert('weight_logs',{id:crypto.randomUUID(),student_id:student,date:todayStr(),weight:parseFloat(newWeight),body_fat:newBF?parseFloat(newBF):null});
     await sb.upsert('students',{id:student,name:student,weight:parseFloat(newWeight),...(newBF?{body_fat:parseFloat(newBF)}:{})});
     await loadWeightLogs(student);await loadProfile(student);setNewWeight('');setNewBF('');setLoading(false);
   };
@@ -678,13 +791,13 @@ export default function App(){
     setCalPanel(null);setView('newlog');
   };
   const deleteLog=async(id)=>{
-    if(!confirm('Excluir este treino?'))return;
+    if(!await askConfirm('Excluir este treino? Esta ação não pode ser desfeita.'))return;
     await sb.del('logs',`id=eq.${id}`);setCalPanel(null);setCalSelDate(null);
     await loadLogs(student,true);
   };
   const saveLog=async()=>{
     if(!logData)return;setLoading(true);
-    const id=logData.id||String(Date.now());
+    const id=logData.id||crypto.randomUUID();
     await sb.upsert('logs',{id,student_id:student,date:logData.date,week:logData.week,template_id:logData.templateId,template_name:logData.templateName,exercises:logData.exercises,rpe:logData.rpe,energy:logData.energy,highlights:logData.highlights,notes:logData.notes});
     const updated=await loadLogs(student,true);
     const saved=updated.find(l=>l.id===id);
@@ -710,8 +823,8 @@ export default function App(){
     }
   };
 
-  const saveTpl=async(tpl)=>{const id=tpl.id||String(Date.now());await sb.upsert('templates',{...tpl,id});await loadTemplates();setEditTpl(null);};
-  const deleteTpl=async(id)=>{if(!confirm('Remover?'))return;await sb.del('templates',`id=eq.${id}`);await loadTemplates();};
+  const saveTpl=async(tpl)=>{const id=tpl.id||crypto.randomUUID();await sb.upsert('templates',{...tpl,id});await loadTemplates();setEditTpl(null);};
+  const deleteTpl=async(id)=>{if(!await askConfirm('Remover este treino do programa?'))return;await sb.del('templates',`id=eq.${id}`);await loadTemplates();};
   const importFromPDF=async(file)=>{
     setImportState({loading:true,error:null,result:null});
     try{
@@ -722,7 +835,7 @@ export default function App(){
     }catch(e){setImportState({loading:false,error:'Não foi possível extrair os treinos.',result:null});}
   };
   const confirmImport=async(treinos)=>{
-    for(const t of treinos){await sb.upsert('templates',{...t,id:String(Date.now())+Math.random().toString(36).slice(2)});}
+    for(const t of treinos){await sb.upsert('templates',{...t,id:crypto.randomUUID()});}
     await loadTemplates();setImportState({loading:false,error:null,result:null});setShowImport(false);
   };
 
@@ -771,14 +884,19 @@ export default function App(){
   const isCoach=view==='coach';
 
   return(
+    <ErrorBoundary>
     <div style={st.app}>
-      <style>{FONTS+`@keyframes spin{to{transform:rotate(360deg)}} .gcal-scroll::-webkit-scrollbar{display:none} *{box-sizing:border-box}`}</style>
+      <style>{FONTS+`@keyframes spin{to{transform:rotate(360deg)}} .gcal-scroll::-webkit-scrollbar{display:none} *{box-sizing:border-box} @keyframes fadeUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       <BGPattern/>
+      <Toast data={toast} onClose={()=>setToast(null)}/>
+      <ConfirmModal data={confirmState}
+        onConfirm={()=>{confirmState?.resolve(true);setConfirmState(null);}}
+        onCancel={()=>{confirmState?.resolve(false);setConfirmState(null);}}/>
 
       {/* TopNav */}
       {isLoggedIn&&!isCoach&&(
         <TopNav items={STUDENT_TABS} active={studentTab} setActive={i=>{setStudentTab(i);if(i===0)setView('dash');else if(i===1)setView('calendar');else if(i===2)setView('progress');else if(i===3)setView('perfil');else if(i===4)setView('mural');}}
-          rightSlot={<span style={{fontSize:11,color:MUTED}}>👤 {student.split(' ')[0]}</span>}/>
+          rightSlot={<button style={{...st.btnG,fontSize:11,color:MUTED,padding:'4px 8px'}} onClick={logout}>← Sair</button>}/>
       )}
       {isCoach&&(
         <TopNav items={COACH_TABS} active={coachTab} setActive={setCoachTab}
@@ -1333,7 +1451,7 @@ export default function App(){
                   <div style={{fontSize:10,color:MUTED,letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>Postando como professor:</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                     {PROFESSORS.map(p=>(
-                      <button key={p} onClick={()=>setCoachName(p)} style={{padding:'6px 16px',borderRadius:999,border:`1px solid ${coachName===p?ACC:BDR}`,background:coachName===p?'rgba(141,198,63,0.12)':'transparent',color:coachName===p?ACC:MUTED,cursor:'pointer',fontSize:12,fontFamily:"'Outfit',sans-serif",fontWeight:coachName===p?700:400,transition:'all 0.15s'}}>
+                      <button key={p} onClick={()=>setCoachName(p)} style={{padding:'6px 16px',borderRadius:999,border:`1px solid ${coachName===p?ACC:BDR}`,background:coachName===p?'rgba(141,198,63,0.12)':'transparent',color:coachName===p?ACC:MUTED,cursor:'pointer',fontSize:12,fontFamily:"'Outfit',sans-serif",fontWeight:coachName===p?700:400,transition:'all 0.15s'}}>/*** coach name button ***
                         {p}
                       </button>
                     ))}
@@ -1346,5 +1464,6 @@ export default function App(){
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

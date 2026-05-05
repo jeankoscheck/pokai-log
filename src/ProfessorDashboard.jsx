@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
-const SB_URL='https://xvyvqmvcjwvedfkdygco.supabase.co';
-const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2eXZxbXZjand2ZWRma2R5Z2NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNjI1MDQsImV4cCI6MjA5MjYzODUwNH0.WYunV6-RzcxuVGjrp5jMLo5Lsyi1OHxYVRXC7ktvJfY';
+const SB_URL=import.meta.env.VITE_SUPABASE_URL;
+const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY;
 const HDR={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
 
 const sb={
@@ -26,9 +26,19 @@ const getVencimento=a=>{
   return`${y}-${String(m).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
 };
 const getValor=(a,planos)=>planos.find(p=>p.id===a.plano)?.valor||0;
+const crc16ccitt=(str)=>{
+  let crc=0xFFFF;
+  for(let i=0;i<str.length;i++){
+    crc^=str.charCodeAt(i)<<8;
+    for(let j=0;j<8;j++) crc=(crc&0x8000)?(crc<<1)^0x1021:crc<<1;
+  }
+  return(crc&0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+};
 const gerarPix=(chave,valor,benef)=>{
   const v=parseFloat(valor).toFixed(2);
-  return`00020126580014br.gov.bcb.pix0136${chave}5204000053039865406${v}5802BR5915${benef.slice(0,15).padEnd(15)}6009SAO PAULO62140510POKAI${Date.now().toString().slice(-6)}6304ABCD`;
+  const txId=`POKAI${Date.now().toString().slice(-6)}`;
+  const payload=`00020126580014br.gov.bcb.pix0136${chave}5204000053039865406${v}5802BR5915${benef.slice(0,15).padEnd(15)}6009SAO PAULO6214050${txId.length}${txId}6304`;
+  return payload+crc16ccitt(payload);
 };
 
 const PLANOS_DEFAULT=[
@@ -131,7 +141,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   };
   const addLancamento=async()=>{
     if(!newLanc.descricao||!newLanc.valor)return;
-    const id=String(Date.now());
+    const id=crypto.randomUUID();
     const data=newLanc.data||new Date().toISOString().slice(0,10);
     await sb.upsert('lancamentos',{id,data,descricao:newLanc.descricao,valor:parseFloat(newLanc.valor),tipo:newLanc.tipo,created_at:new Date().toISOString()});
     setNewLanc({data:'',descricao:'',valor:'',tipo:'saida'});
