@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 import { Home, Calendar, BarChart2, User, Users, ClipboardList, ChevronLeft, ChevronRight, Plus, Edit2, Settings } from "lucide-react";
+import ProfessorDashboard from "./ProfessorDashboard.jsx";
 
 const FONTS=`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap');`;
 const BG='#060606',SURF='#0F0F0F',SURF2='#181818',BDR='#272727',ACC='#8DC63F',TEXT='#F2F2F0',MUTED='#666660',WARN='#E8A020',DANGER='#E05050';
@@ -586,7 +587,7 @@ export default function App(){
   const weeklyRepsData=useMemo(()=>{const w={};logs.forEach(l=>{if(l.week)w[l.week]=(w[l.week]||0)+totalReps(l);});return Object.entries(w).slice(-6).map(([week,reps])=>({week,reps}));},[logs]);
 
   const STUDENT_TABS=[{icon:Home,label:'Dashboard'},{icon:Calendar,label:'Treinos'},{icon:BarChart2,label:'Progresso'},{icon:User,label:'Perfil'}];
-  const COACH_TABS=[{icon:Calendar,label:'Calendário'},{icon:Users,label:'Alunos'},{icon:ClipboardList,label:'Treinos'}];
+  const COACH_TABS=[{icon:Calendar,label:'Calendário'},{icon:Users,label:'Alunos'},{icon:ClipboardList,label:'Treinos'},{icon:Settings,label:'Gestão'}];
 
   const coachSelDayTpl=coachCalSel?tplByDate[coachCalSel]||null:null;
   const coachSelDayLogs=useMemo(()=>{
@@ -1058,6 +1059,7 @@ export default function App(){
               </div>
             )}
             {!loading&&coachTab===2&&editTpl&&<TemplateForm tpl={editTpl} onSave={saveTpl} onCancel={()=>setEditTpl(null)}/>}
+            {coachTab===3&&<ProfessorDashboard/>}
           </div>
         )}
       </div>
