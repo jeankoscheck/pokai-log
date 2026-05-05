@@ -87,6 +87,7 @@ function TopNav({items,active,setActive,rightSlot}){
   const conRef=useRef(null);
   const btnRefs=useRef([]);
   const[ind,setInd]=useState({width:0,left:0});
+  const compact=items.length>=5;
   useEffect(()=>{
     const update=()=>{
       const btn=btnRefs.current[active];const con=conRef.current;
@@ -110,9 +111,9 @@ function TopNav({items,active,setActive,rightSlot}){
           const Icon=item.icon;const isA=active===i;
           return(
             <button key={i} ref={el=>btnRefs.current[i]=el} onClick={()=>setActive(i)}
-              style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:7,padding:'11px 14px',background:'none',border:'none',cursor:'pointer',color:isA?ACC:'#555',transition:'color 0.2s',zIndex:1,position:'relative',whiteSpace:'nowrap',fontFamily:"'Outfit',sans-serif"}}>
-              <Icon size={16} strokeWidth={isA?2:1.5}/>
-              <span style={{fontSize:12,fontWeight:isA?600:400}}>{item.label}</span>
+              style={{flex:compact?(isA?2:1):1,display:'flex',alignItems:'center',justifyContent:'center',gap:compact?(isA?5:0):7,padding:compact?'11px 6px':'11px 14px',background:'none',border:'none',cursor:'pointer',color:isA?ACC:'#555',transition:'color 0.2s, flex 0.32s cubic-bezier(.4,0,.2,1)',zIndex:1,position:'relative',whiteSpace:'nowrap',overflow:'hidden',fontFamily:"'Outfit',sans-serif"}}>
+              <Icon size={compact?15:16} strokeWidth={isA?2:1.5}/>
+              {(!compact||isA)&&<span style={{fontSize:11,fontWeight:isA?600:400,overflow:'hidden',textOverflow:'ellipsis',maxWidth:90}}>{item.label}</span>}
             </button>
           );
         })}
