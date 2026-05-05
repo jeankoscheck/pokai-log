@@ -299,10 +299,56 @@ function LogDetail({log,onEdit,onDelete,onClose}){
   );
 }
 
+// ── ExerciseAccordion ─────────────────────────────────────────────────────────
+function ExerciseAccordion({exNames,selEx,setSelEx,progressData,st}){
+  const[open,setOpen]=useState(false);
+  const[search,setSearch]=useState('');
+  const filtered=exNames.filter(n=>n.toLowerCase().includes(search.toLowerCase()));
+  return(
+    <div style={{...st.sect,marginBottom:16}}>
+      <button onClick={()=>setOpen(v=>!v)} style={{display:'flex',width:'100%',alignItems:'center',justifyContent:'space-between',background:'none',border:'none',cursor:'pointer',padding:0,marginBottom:open?12:0}}>
+        <span style={{fontFamily:"'Bebas Neue'",fontSize:13,letterSpacing:2,color:ACC}}>EVOLUÇÃO POR EXERCÍCIO</span>
+        <span style={{fontSize:13,color:MUTED,transition:'transform 0.2s',transform:open?'rotate(180deg)':'none',display:'inline-block'}}>▾</span>
+      </button>
+      {open&&<>
+        <div style={{position:'relative',marginBottom:12}}>
+          <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:MUTED,fontSize:13,pointerEvents:'none'}}>🔍</span>
+          <input
+            value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="Buscar exercício..."
+            style={{...st.inp,paddingLeft:32,fontSize:12}}
+          />
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:5,maxHeight:260,overflowY:'auto',paddingRight:2}}>
+          {filtered.map(n=>{
+            const isSelected=selEx===n;
+            return(
+              <button key={n} onClick={()=>setSelEx(isSelected?'':n)}
+                style={{padding:'8px 10px',border:`1px solid ${isSelected?ACC:BDR}`,background:isSelected?'rgba(141,198,63,0.1)':'rgba(255,255,255,0.02)',color:isSelected?ACC:MUTED,borderRadius:7,cursor:'pointer',fontSize:10,fontFamily:"'Outfit',sans-serif",textAlign:'left',lineHeight:1.3,transition:'all 0.15s',fontWeight:isSelected?700:400}}>
+                {n}
+              </button>
+            );
+          })}
+          {filtered.length===0&&<div style={{gridColumn:'1/-1',textAlign:'center',color:MUTED,fontSize:11,padding:'20px 0'}}>Nenhum exercício encontrado</div>}
+        </div>
+        {selEx&&progressData.length>0&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${BDR}`}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:ACC,marginBottom:10}}>{selEx}</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12}}>
+            {[['Carga máx',progressData[progressData.length-1]?.maxLoad?progressData[progressData.length-1].maxLoad+' kg':'—'],['Melhor sessão',Math.max(...progressData.map(d=>d.reps))+' reps'],['Sessões',progressData.length]].map(([k,v])=>(
+              <div key={k} style={st.card}><div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:ACC,textAlign:'center'}}>{v}</div><div style={{fontSize:9,color:MUTED,textTransform:'uppercase',marginTop:2,textAlign:'center'}}>{k}</div></div>
+            ))}
+          </div>
+          <ResponsiveContainer width="100%" height={150}><LineChart data={progressData} margin={{top:4,right:8,left:0,bottom:4}}><CartesianGrid strokeDasharray="3 3" stroke={BDR}/><XAxis dataKey="date" tick={{fill:MUTED,fontSize:9}}/><YAxis tick={{fill:MUTED,fontSize:9}} unit="kg" width={40}/><Tooltip contentStyle={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:6,color:TEXT,fontSize:11}}/><Line type="monotone" dataKey="maxLoad" stroke={ACC} strokeWidth={2.5} dot={{fill:ACC,r:3}}/></LineChart></ResponsiveContainer>
+        </div>}
+      </>}
+    </div>
+  );
+}
+
 // ── LogForm ───────────────────────────────────────────────────────────────────
 function LogForm({logData,setLogData,onSave,onCancel,loading}){
   const updSet=(ei,si,f,v)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.map((s,j)=>j===si?{...s,[f]:v}:s)}:e)}));
-  const addSet=ei=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:[...e.sets,{...EMPTY_SET}]}:e)}));
+  const addSet=ei=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:[...e.sets,{...EMPTY_SET,reps:e.planned?.reps||''}]}:e)}));
   const remSet=(ei,si)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.filter((_,j)=>j!==si)}:e)}));
   return(
     <div>
@@ -511,7 +557,9 @@ export default function App(){
 
   const startLog=(tpl,dateKey)=>{
     setLogData({id:null,date:dateKey,week:'',templateId:tpl.id,templateName:tpl.name,
-      exercises:tpl.exercises.map(ex=>({name:ex.name,cues:ex.cues,planned:{sets:ex.plannedSets,reps:ex.plannedReps,load:ex.plannedLoad},sets:Array.from({length:ex.plannedSets},()=>({...EMPTY_SET}))})),
+      exercises:tpl.exercises.map(ex=>({name:ex.name,cues:ex.cues,planned:{sets:ex.plannedSets,reps:ex.plannedReps,load:ex.plannedLoad},
+        // Pré-preenche reps do planejado; load fica vazio para o aluno preencher
+        sets:Array.from({length:ex.plannedSets||3},()=>({...EMPTY_SET,reps:ex.plannedReps||''}))})),
       rpe:7,energy:'média',highlights:'',notes:''});
     setCalPanel(null);setView('newlog');
   };
@@ -755,121 +803,131 @@ export default function App(){
 
         {/* PROGRESS */}
         {view==='progress'&&(loading?<Spin/>:(()=>{
-          // ── Gamification calculations ─────────────────────────────────
+          // ── XP mais difícil: base 15, bônus pequenos ─────────────────
           const totalWorkouts=logs.length;
           const calcXP=l=>{
-            const base=50;
-            const rpeBonus=Math.max(0,(l.rpe||7)-5)*8;
-            const volBonus=Math.min(50,totalReps(l)*0.3);
+            const base=15;
+            const rpeBonus=Math.max(0,(l.rpe||7)-6)*4;
+            const volBonus=Math.min(10,totalReps(l)*0.05);
             return Math.round(base+rpeBonus+volBonus);
           };
           const totalXP=logs.reduce((a,l)=>a+calcXP(l),0);
+          // Nível mais espaçado
           const LEVELS=[
-            {min:0,max:200,name:'Iniciante',color:'#888'},
-            {min:200,max:500,name:'Aluno',color:INFO},
-            {min:500,max:1000,name:'Guerreiro',color:ACC},
-            {min:1000,max:2000,name:'Veterano',color:WARN},
-            {min:2000,max:4000,name:'Elite',color:'#FF7C3A'},
-            {min:4000,max:Infinity,name:'Mestre',color:'#C96BFF'},
+            {min:0,   max:100,  name:'Iniciante',  color:'#888'},
+            {min:100, max:300,  name:'Aluno',       color:INFO},
+            {min:300, max:700,  name:'Guerreiro',   color:ACC},
+            {min:700, max:1500, name:'Veterano',    color:WARN},
+            {min:1500,max:3000, name:'Elite',       color:'#FF7C3A'},
+            {min:3000,max:6000, name:'Mestre',      color:'#C96BFF'},
+            {min:6000,max:Infinity,name:'Lenda',    color:'#FFD700'},
           ];
           const lvlData=LEVELS.find(l=>totalXP>=l.min&&totalXP<l.max)||LEVELS[LEVELS.length-1];
           const lvlIdx=LEVELS.indexOf(lvlData);
           const xpInLvl=totalXP-lvlData.min;
           const xpNeeded=lvlData.max===Infinity?totalXP:lvlData.max-lvlData.min;
           const xpPct=Math.min(100,Math.round((xpInLvl/xpNeeded)*100));
-          // Streak (semanas consecutivas)
-          const getWeekKey=d=>{const dt=new Date(d);dt.setDate(dt.getDate()-dt.getDay());return dt.toISOString().slice(0,10);};
+          // Streak
+          const getWeekKey=d=>{const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()-dt.getDay());return dt.toISOString().slice(0,10);};
           const loggedWeeks=new Set(logs.map(l=>getWeekKey(l.date)));
           let streak=0;const now=new Date();
-          for(let i=0;i<52;i++){const d=new Date(now);d.setDate(d.getDate()-i*7);if(loggedWeeks.has(getWeekKey(d.toISOString().slice(0,10))))streak++;else break;}
-          // Medals
+          for(let i=0;i<104;i++){const d=new Date(now);d.setDate(d.getDate()-i*7);if(loggedWeeks.has(getWeekKey(d.toISOString().slice(0,10))))streak++;else break;}
+          // Totais para medalhas
           const allSetsAll=logs.flatMap(l=>(l.exercises||[]).flatMap(e=>(e.sets||[]).filter(s=>s.completed)));
-          const hasPR=()=>{
-            const byEx={};
-            [...logs].reverse().forEach(l=>(l.exercises||[]).forEach(e=>{
-              const mx=Math.max(0,...(e.sets||[]).filter(s=>s.completed).map(s=>parseFloat(s.load)||0));
-              if(!byEx[e.name])byEx[e.name]=mx;
-              else if(mx>byEx[e.name])return true;
-            }));return Object.keys(byEx).length>1;
-          };
+          const totalRepsAll=allSetsAll.reduce((a,s)=>a+(parseFloat(s.reps)||0),0);
           const worksThisWeek=logs.filter(l=>getWeekKey(l.date)===getWeekKey(new Date().toISOString().slice(0,10))).length;
+          // PR detection
+          const prMap={};let hasPR=false;
+          [...logs].sort((a,b)=>a.date.localeCompare(b.date)).forEach(l=>(l.exercises||[]).forEach(e=>{
+            const mx=Math.max(0,...(e.sets||[]).filter(s=>s.completed&&parseFloat(s.load)>0).map(s=>parseFloat(s.load)));
+            if(mx>0){if(prMap[e.name]&&mx>prMap[e.name])hasPR=true;prMap[e.name]=Math.max(prMap[e.name]||0,mx);}
+          }));
           const MEDALS=[
-            {id:'primeira',emoji:'🥋',name:'Primeira Batalha',desc:'Primeiro treino registrado',got:totalWorkouts>=1},
-            {id:'guerreiro',emoji:'💪',name:'Guerreiro',desc:'10 treinos completos',got:totalWorkouts>=10},
-            {id:'veterano',emoji:'🏆',name:'Veterano',desc:'50 treinos completos',got:totalWorkouts>=50},
-            {id:'lenda',emoji:'🌟',name:'Lenda',desc:'100 treinos completos',got:totalWorkouts>=100},
-            {id:'chamas',emoji:'🔥',name:'Em Chamas',desc:'4 semanas seguidas',got:streak>=4},
-            {id:'imortal',emoji:'⚡',name:'Imortal',desc:'12 semanas seguidas',got:streak>=12},
-            {id:'semana',emoji:'🎯',name:'Semana Intensa',desc:'3+ treinos nesta semana',got:worksThisWeek>=3},
-            {id:'volume',emoji:'📈',name:'Máquina de Volume',desc:'Mais de 500 reps totais',got:allSetsAll.reduce((a,s)=>a+(parseFloat(s.reps)||0),0)>=500},
+            // Frequência
+            {cat:'🏋️ Frequência',id:'p1',  emoji:'🥋',name:'Primeira Batalha',  desc:'Primeiro treino registrado',          got:totalWorkouts>=1},
+            {cat:'🏋️ Frequência',id:'p5',  emoji:'🌱',name:'Primeiros Passos',   desc:'5 treinos completos',                  got:totalWorkouts>=5},
+            {cat:'🏋️ Frequência',id:'p10', emoji:'💪',name:'Dedicado',           desc:'10 treinos completos',                 got:totalWorkouts>=10},
+            {cat:'🏋️ Frequência',id:'p25', emoji:'🦁',name:'Guerreiro',          desc:'25 treinos completos',                 got:totalWorkouts>=25},
+            {cat:'🏋️ Frequência',id:'p50', emoji:'🏆',name:'Veterano',           desc:'50 treinos completos',                 got:totalWorkouts>=50},
+            {cat:'🏋️ Frequência',id:'p100',emoji:'👑',name:'Centurião',          desc:'100 treinos completos',                got:totalWorkouts>=100},
+            {cat:'🏋️ Frequência',id:'p200',emoji:'🌟',name:'Lenda Viva',         desc:'200 treinos completos',                got:totalWorkouts>=200},
+            // Consistência
+            {cat:'🔥 Consistência',id:'s1', emoji:'🔥',name:'Faísca',            desc:'2 semanas seguidas',                   got:streak>=2},
+            {cat:'🔥 Consistência',id:'s4', emoji:'⚡',name:'Em Chamas',         desc:'4 semanas seguidas',                   got:streak>=4},
+            {cat:'🔥 Consistência',id:'s8', emoji:'💥',name:'Incansável',        desc:'2 meses seguidos',                     got:streak>=8},
+            {cat:'🔥 Consistência',id:'s12',emoji:'🌊',name:'Força de Vontade',  desc:'3 meses seguidos',                     got:streak>=12},
+            {cat:'🔥 Consistência',id:'s24',emoji:'🔱',name:'Imortal',           desc:'6 meses seguidos',                     got:streak>=24},
+            {cat:'🔥 Consistência',id:'sw3',emoji:'🎯',name:'Semana Tripla',     desc:'3+ treinos nesta semana',              got:worksThisWeek>=3},
+            // Volume
+            {cat:'📦 Volume',id:'v2k', emoji:'📦',name:'Volume Bronze',         desc:'2.000 reps acumuladas',               got:totalRepsAll>=2000},
+            {cat:'📦 Volume',id:'v10k',emoji:'📊',name:'Volume Prata',           desc:'10.000 reps acumuladas',              got:totalRepsAll>=10000},
+            {cat:'📦 Volume',id:'v30k',emoji:'🗂️',name:'Volume Ouro',           desc:'30.000 reps acumuladas',              got:totalRepsAll>=30000},
+            // Evolução
+            {cat:'📈 Evolução',id:'pr',emoji:'📈',name:'PR Registrado',          desc:'Bateu uma carga pessoal recorde',      got:hasPR},
+            {cat:'📈 Evolução',id:'g2',emoji:'🎮',name:'Subiu de Nível',         desc:'Atingiu Nível 2 ou mais',             got:lvlIdx>=1},
+            {cat:'📈 Evolução',id:'g4',emoji:'🏅',name:'Atleta',                 desc:'Atingiu Nível 4 (Veterano)',          got:lvlIdx>=3},
           ];
+          const cats=[...new Set(MEDALS.map(m=>m.cat))];
+          const gotCount=MEDALS.filter(m=>m.got).length;
           return(
           <div>
             {/* Hero card */}
-            <div style={{background:`linear-gradient(135deg,rgba(10,26,0,0.95),rgba(20,40,0,0.9))`,border:`2px solid ${lvlData.color}`,borderRadius:16,padding:'20px',marginBottom:14,position:'relative',overflow:'hidden'}}>
-              <div style={{position:'absolute',top:-30,right:-30,fontSize:80,opacity:0.06}}>⚔️</div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+            <div style={{background:`linear-gradient(135deg,rgba(10,26,0,0.97),rgba(18,36,0,0.9))`,border:`2px solid ${lvlData.color}`,borderRadius:16,padding:'20px',marginBottom:14,position:'relative',overflow:'hidden'}}>
+              <div style={{position:'absolute',top:-20,right:-20,fontSize:90,opacity:0.05,pointerEvents:'none'}}>⚔️</div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
                 <div>
-                  <div style={{fontSize:9,letterSpacing:4,color:MUTED,marginBottom:4,textTransform:'uppercase'}}>Nível {lvlIdx+1}</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:28,letterSpacing:2,color:lvlData.color,lineHeight:1}}>{lvlData.name}</div>
+                  <div style={{fontSize:9,letterSpacing:4,color:MUTED,marginBottom:4,textTransform:'uppercase'}}>Nível {lvlIdx+1} · {lvlData.name}</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:2,color:lvlData.color,lineHeight:1}}>{student.split(' ')[0]}</div>
                 </div>
                 <div style={{textAlign:'right'}}>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:32,color:lvlData.color}}>{totalXP.toLocaleString('pt-BR')}</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:34,color:lvlData.color,lineHeight:1}}>{totalXP.toLocaleString('pt-BR')}</div>
                   <div style={{fontSize:9,color:MUTED,letterSpacing:2}}>XP TOTAL</div>
                 </div>
               </div>
-              {/* XP bar */}
               {lvlData.max!==Infinity&&<div style={{marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:MUTED,marginBottom:5}}>
-                  <span>{xpInLvl.toLocaleString('pt-BR')} XP</span>
-                  <span>próx. nível: {lvlData.max.toLocaleString('pt-BR')} XP</span>
+                  <span>{xpInLvl} XP neste nível</span>
+                  <span>{xpNeeded-xpInLvl} XP para {LEVELS[lvlIdx+1]?.name||'máximo'}</span>
                 </div>
-                <div style={{height:8,background:'rgba(255,255,255,0.06)',borderRadius:4,overflow:'hidden'}}>
-                  <div style={{width:`${xpPct}%`,height:'100%',background:`linear-gradient(90deg,${lvlData.color}88,${lvlData.color})`,borderRadius:4,transition:'width 1s ease'}}/>
+                <div style={{height:9,background:'rgba(255,255,255,0.06)',borderRadius:4,overflow:'hidden'}}>
+                  <div style={{width:`${xpPct}%`,height:'100%',background:`linear-gradient(90deg,${lvlData.color}66,${lvlData.color})`,borderRadius:4}}/>
                 </div>
               </div>}
-              {/* Stats row */}
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                {[['🏋️','Treinos',totalWorkouts],['🔥','Semanas',streak],['✅','Medalhas',MEDALS.filter(m=>m.got).length+'/'+MEDALS.length]].map(([e,k,v])=>(
-                  <div key={k} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'10px',textAlign:'center'}}>
-                    <div style={{fontSize:18,marginBottom:2}}>{e}</div>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:TEXT}}>{v}</div>
-                    <div style={{fontSize:9,color:MUTED,textTransform:'uppercase',letterSpacing:1}}>{k}</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                {[['🏋️',totalWorkouts,'Treinos'],['🔥',streak,'Semanas'],['💥',Math.round(totalRepsAll).toLocaleString('pt-BR'),'Reps'],['🏅',`${gotCount}/${MEDALS.length}`,'Medalhas']].map(([e,v,k])=>(
+                  <div key={k} style={{background:'rgba(0,0,0,0.35)',borderRadius:8,padding:'9px 6px',textAlign:'center'}}>
+                    <div style={{fontSize:16,marginBottom:2}}>{e}</div>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:TEXT,lineHeight:1}}>{v}</div>
+                    <div style={{fontSize:8,color:MUTED,textTransform:'uppercase',letterSpacing:0.5,marginTop:2}}>{k}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Medals */}
+            {/* Medals por categoria */}
             <div style={st.sect}>
-              <span style={st.sectT}>CONQUISTAS</span>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
-                {MEDALS.map(m=>(
-                  <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:m.got?'rgba(141,198,63,0.06)':'rgba(255,255,255,0.02)',border:`1px solid ${m.got?'rgba(141,198,63,0.25)':BDR}`,borderRadius:10,opacity:m.got?1:0.4}}>
-                    <div style={{fontSize:26,filter:m.got?'none':'grayscale(1)'}}>{m.emoji}</div>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:700,color:m.got?TEXT:MUTED}}>{m.name}</div>
-                      <div style={{fontSize:9,color:MUTED,marginTop:2}}>{m.desc}</div>
-                    </div>
-                    {m.got&&<div style={{marginLeft:'auto',fontSize:9,color:ACC,fontWeight:700}}>✓</div>}
+              <span style={st.sectT}>CONQUISTAS — {gotCount}/{MEDALS.length}</span>
+              {cats.map(cat=>(
+                <div key={cat} style={{marginBottom:14}}>
+                  <div style={{fontSize:10,fontWeight:700,color:MUTED,letterSpacing:1.5,textTransform:'uppercase',marginBottom:7,paddingBottom:5,borderBottom:`1px solid ${BDR}`}}>{cat}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
+                    {MEDALS.filter(m=>m.cat===cat).map(m=>(
+                      <div key={m.id} style={{display:'flex',alignItems:'center',gap:9,padding:'9px 11px',background:m.got?'rgba(141,198,63,0.07)':'rgba(255,255,255,0.015)',border:`1px solid ${m.got?'rgba(141,198,63,0.3)':BDR}`,borderRadius:9,transition:'opacity 0.2s',opacity:m.got?1:0.38}}>
+                        <div style={{fontSize:22,flexShrink:0,filter:m.got?'none':'grayscale(1) brightness(0.5)'}}>{m.emoji}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:10,fontWeight:700,color:m.got?TEXT:MUTED,lineHeight:1.2}}>{m.name}</div>
+                          <div style={{fontSize:9,color:MUTED,marginTop:2,lineHeight:1.3}}>{m.desc}</div>
+                        </div>
+                        {m.got&&<div style={{flexShrink:0,width:16,height:16,borderRadius:'50%',background:ACC,display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#000',fontWeight:900}}>✓</div>}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
 
-            {/* Exercise progress (mantido) */}
-            {exNames.length>0&&<div style={st.sect}>
-              <span style={st.sectT}>EVOLUÇÃO POR EXERCÍCIO</span>
-              <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:12}}>{exNames.map(n=><button key={n} onClick={()=>setSelEx(n)} style={{padding:'6px 12px',border:`1px solid ${selEx===n?ACC:BDR}`,background:selEx===n?'rgba(141,198,63,0.08)':'transparent',color:selEx===n?ACC:MUTED,borderRadius:5,cursor:'pointer',fontSize:11,fontFamily:"'Outfit',sans-serif"}}>{n}</button>)}</div>
-              {selEx&&progressData.length>0&&<>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:12}}>
-                  {[['Carga máx',progressData[progressData.length-1]?.maxLoad?progressData[progressData.length-1].maxLoad+' kg':'—'],['Melhor sessão',Math.max(...progressData.map(d=>d.reps))+' reps'],['Sessões',progressData.length]].map(([k,v])=>(
-                    <div key={k} style={st.card}><div style={{fontFamily:"'Bebas Neue'",fontSize:21,color:ACC,textAlign:'center'}}>{v}</div><div style={{fontSize:9,color:MUTED,textTransform:'uppercase',marginTop:2,textAlign:'center'}}>{k}</div></div>
-                  ))}
-                </div>
-                <ResponsiveContainer width="100%" height={160}><LineChart data={progressData} margin={{top:5,right:10,left:0,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke={BDR}/><XAxis dataKey="date" tick={{fill:MUTED,fontSize:10}}/><YAxis tick={{fill:MUTED,fontSize:10}} unit="kg" width={44}/><Tooltip contentStyle={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:6,color:TEXT,fontSize:12}}/><Line type="monotone" dataKey="maxLoad" stroke={ACC} strokeWidth={2.5} dot={{fill:ACC,r:3}}/></LineChart></ResponsiveContainer>
-              </>}
-            </div>}
+            {/* Evolução por exercício — acordeão fechado por padrão */}
+            {exNames.length>0&&<ExerciseAccordion exNames={exNames} selEx={selEx} setSelEx={setSelEx} progressData={progressData} st={st}/>}
           </div>
           );
         })())}
