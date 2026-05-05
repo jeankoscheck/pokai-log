@@ -107,6 +107,9 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   const[novoAluno,setNovoAluno]=useState({nome:'',nasc:'',tel:'',plano:'3x',dia_venc:10,turmas:[]});
   const[vencInput,setVencInput]=useState('');
   const[saving,setSaving]     =useState(null);
+  const[editingAluno,setEditingAluno]=useState(null); // id do aluno em edição
+  const[editForm,setEditForm] =useState({});          // dados do form de edição
+  const[confirmDel,setConfirmDel]=useState(null);     // id aguardando confirmação de exclusão
 
   // Carrega dados de gestão do Supabase
   useEffect(()=>{
@@ -180,6 +183,28 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   };
   const salvarGestaoAluno=async(id,field,value)=>{
     await saveGestao(id,{[field]:value});
+  };
+
+  const abrirEdicao=(a)=>{
+    setEditingAluno(a.id);
+    setEditForm({tel:a.tel,nasc:a.nasc,plano:a.plano,dia_venc:a.dia_venc,ativo:a.ativo,turmas:[...a.turmas]});
+    setSelAluno(a.id);
+  };
+  const toggleTurmaEdit=(key)=>{
+    setEditForm(p=>({...p,turmas:p.turmas.includes(key)?p.turmas.filter(t=>t!==key):[...p.turmas,key]}));
+  };
+  const salvarEdicao=async(id)=>{
+    await saveGestao(id,editForm);
+    setEditingAluno(null);
+  };
+  const excluirAluno=async(id)=>{
+    setSaving(id);
+    // Remove da tabela gestao
+    await fetch(`${SB_URL}/rest/v1/gestao?student_id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:HDR});
+    // Remove da tabela students (cancela acesso ao app)
+    await fetch(`${SB_URL}/rest/v1/students?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:HDR});
+    setGestao(p=>{const n={...p};delete n[id];return n;});
+    setConfirmDel(null);setSelAluno(null);setSaving(null);
   };
   const salvarPlano=()=>{
     if(!novoPlan.nome||!novoPlan.valor)return;
@@ -359,7 +384,9 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
           const valor=getValor(a,planos);
           const nFaltas=Object.keys(a.faltas||{}).length;
           const open=selAluno===a.id;
+          const isEditing=editingAluno===a.id;
           const isSaving=saving===a.id;
+          const isConfirmDel=confirmDel===a.id;
           const status=a.pago
             ?<span style={s.tag}>✅ Pago</span>
             :d<0?<span style={s.tagD}>⚠️ {Math.abs(d)}d atraso</span>
@@ -367,12 +394,14 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
             :d<=7?<span style={s.tagW}>📅 {d}d</span>
             :<span style={s.tagI}>OK</span>;
           return(
-            <div key={a.id} style={{...s.card,opacity:a.ativo?1:0.55,border:`1px solid ${open?ACC:BDR}`}}>
-              <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:6,cursor:'pointer'}} onClick={()=>setSelAluno(open?null:a.id)}>
+            <div key={a.id} style={{...s.card,opacity:a.ativo?1:0.55,border:`1px solid ${isEditing?WARN:open?ACC:BDR}`}}>
+
+              {/* Cabeçalho do card */}
+              <div style={{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:6,cursor:'pointer'}} onClick={()=>{if(!isEditing){setSelAluno(open?null:a.id);setEditingAluno(null);}}}>
                 <div>
                   <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:3,flexWrap:'wrap'}}>
                     <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16}}>{a.nome}</span>
-                    <span style={s.tagI}>{planos.find(p=>p.id===a.plano)?.nome||a.plano||'sem plano'}</span>
+                    <span style={s.tagI}>{planos.find(p=>p.id===a.plano)?.nome||'sem plano'}</span>
                     {status}
                     {!a.ativo&&<span style={s.tagD}>inativo</span>}
                     {a.peso&&<span style={{fontSize:10,color:MUTED}}>{a.peso}kg</span>}
@@ -385,10 +414,79 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                   {valor>0&&<span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:ACC}}>R${valor}</span>}
                   {!a.pago&&valor>0&&<button onClick={e=>{e.stopPropagation();setShowPix(a);}} style={s.btnS}>💳</button>}
                   {a.tel&&<button onClick={e=>{e.stopPropagation();window.open(waLink(a,`Olá ${a.nome.split(' ')[0]}! 👋`),'_blank');}} style={{...s.btnS,borderColor:'#25D366',color:'#25D366'}}>📱</button>}
+                  <button onClick={e=>{e.stopPropagation();abrirEdicao(a);}} style={{...s.btnS,fontSize:10,padding:'4px 10px',borderColor:WARN,color:WARN}}>✏️ Editar</button>
                 </div>
               </div>
 
-              {open&&<div style={{marginTop:10,borderTop:`1px solid ${BDR}`,paddingTop:10}}>
+              {/* MODO EDIÇÃO */}
+              {open&&isEditing&&<div style={{marginTop:12,borderTop:`1px solid ${WARN}33`,paddingTop:12}}>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:12,color:WARN,letterSpacing:2,marginBottom:10}}>EDITANDO PERFIL</div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                  <div>
+                    <label style={s.lbl}>Plano</label>
+                    <select style={s.inp} value={editForm.plano||'3x'} onChange={e=>setEditForm(p=>({...p,plano:e.target.value}))}>
+                      {planos.map(p=><option key={p.id} value={p.id}>{p.nome} — R${p.valor}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Dia vencimento (1–28)</label>
+                    <input type="number" min="1" max="28" style={s.inp} value={editForm.dia_venc||10} onChange={e=>setEditForm(p=>({...p,dia_venc:parseInt(e.target.value)||10}))}/>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>WhatsApp (55+DDD+número)</label>
+                    <input style={s.inp} value={editForm.tel||''} onChange={e=>setEditForm(p=>({...p,tel:e.target.value}))} placeholder="5563999990000"/>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Data de nascimento</label>
+                    <input type="date" style={s.inp} value={editForm.nasc||''} onChange={e=>setEditForm(p=>({...p,nasc:e.target.value}))}/>
+                  </div>
+                  <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:8,background:SURF2,borderRadius:8,padding:'8px 12px'}}>
+                    <span style={{fontSize:10,color:MUTED,flex:1}}>Status do aluno</span>
+                    <button onClick={()=>setEditForm(p=>({...p,ativo:!p.ativo}))} style={{...s.btnS,fontSize:10,borderColor:editForm.ativo?ACC:DANGER,color:editForm.ativo?ACC:DANGER}}>
+                      {editForm.ativo?'✅ Ativo':'❌ Inativo'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Turmas */}
+                <div style={{marginBottom:12}}>
+                  <label style={s.lbl}>Turmas fixas</label>
+                  {HORARIOS.map(h=>(
+                    <div key={h} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+                      <span style={{fontSize:10,color:ACC,fontFamily:"'JetBrains Mono',monospace",width:44,flexShrink:0}}>{h}</span>
+                      {DIAS.map(dia=>{const key=`${dia} ${h}`;const sel=(editForm.turmas||[]).includes(key);return(
+                        <button key={dia} onClick={()=>toggleTurmaEdit(key)} style={{padding:'2px 7px',borderRadius:4,border:`1px solid ${sel?ACC:BDR}`,background:sel?'rgba(141,198,63,0.15)':'transparent',color:sel?ACC:MUTED,cursor:'pointer',fontSize:9}}>{dia.slice(0,3)}</button>
+                      );})}
+                      {(()=>{const key=`Sábado ${h}`;const sel=(editForm.turmas||[]).includes(key);return h==='10:00'?<button onClick={()=>toggleTurmaEdit(key)} style={{padding:'2px 7px',borderRadius:4,border:`1px solid ${sel?WARN:BDR}`,background:sel?'rgba(232,160,32,0.15)':'transparent',color:sel?WARN:MUTED,cursor:'pointer',fontSize:9}}>Sáb</button>:null;})()}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Ações */}
+                <div style={{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    {!isConfirmDel?(
+                      <button onClick={()=>setConfirmDel(a.id)} style={{...s.btnD,fontSize:10}}>🗑 Excluir aluno</button>
+                    ):(
+                      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                        <span style={{fontSize:11,color:DANGER}}>Confirmar exclusão?</span>
+                        <button onClick={()=>excluirAluno(a.id)} disabled={isSaving} style={{...s.btnD,fontSize:10}}>{isSaving?'..':'Sim, excluir'}</button>
+                        <button onClick={()=>setConfirmDel(null)} style={s.btnS}>Não</button>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{display:'flex',gap:7}}>
+                    <button style={s.btnS} onClick={()=>{setEditingAluno(null);setConfirmDel(null);}}>Cancelar</button>
+                    <button style={{...s.btnP,background:WARN}} onClick={()=>salvarEdicao(a.id)} disabled={isSaving}>
+                      {isSaving?'Salvando...':'💾 Salvar alterações'}
+                    </button>
+                  </div>
+                </div>
+              </div>}
+
+              {/* MODO VISUALIZAÇÃO */}
+              {open&&!isEditing&&<div style={{marginTop:10,borderTop:`1px solid ${BDR}`,paddingTop:10}}>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:7,marginBottom:12}}>
                   {[['Faltas',nFaltas],['Vence dia',a.dia_venc||'—'],['WhatsApp',a.tel?'✅':'—']].map(([k,v])=>(
                     <div key={k} style={{background:SURF2,borderRadius:7,padding:'7px',textAlign:'center'}}>
@@ -398,39 +496,13 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                   ))}
                 </div>
 
-                {/* Status de pagamento */}
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,background:SURF2,borderRadius:8,padding:'8px 12px'}}>
+                {/* Pagamento */}
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,background:SURF2,borderRadius:8,padding:'8px 12px'}}>
                   <span style={{fontSize:10,color:MUTED,flex:1}}>Pagamento deste mês</span>
                   <button onClick={()=>togglePago(a)} disabled={isSaving} style={{...s.btnS,fontSize:10,borderColor:a.pago?ACC:DANGER,color:a.pago?ACC:DANGER}}>
-                    {isSaving?'...':(a.pago?'✅ Pago — clique para desfazer':'❌ Pendente — clique para confirmar')}
+                    {isSaving?'...':(a.pago?'✅ Pago — desfazer':'❌ Pendente — confirmar')}
                   </button>
                 </div>
-
-                {/* Editar vencimento */}
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,background:SURF2,borderRadius:8,padding:'8px 12px'}}>
-                  <span style={{fontSize:10,color:MUTED,flex:1}}>Dia de vencimento</span>
-                  {editVenc===a.id?(
-                    <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                      <input type="number" min="1" max="28" style={{...s.inp,width:60,fontSize:12,textAlign:'center',padding:'4px 6px'}} value={vencInput} onChange={e=>setVencInput(e.target.value)}/>
-                      <button style={s.btnP} onClick={()=>saveVenc(a.id)}>OK</button>
-                      <button style={s.btnS} onClick={()=>setEditVenc(null)}>✕</button>
-                    </div>
-                  ):(
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:ACC}}>Dia {a.dia_venc||'—'}</span>
-                      <button style={{...s.btnS,fontSize:10,padding:'3px 8px'}} onClick={()=>{setEditVenc(a.id);setVencInput(String(a.dia_venc||10));}}>✏️</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Editar WhatsApp inline */}
-                {!a.tel&&<div style={{marginBottom:12}}>
-                  <label style={s.lbl}>WhatsApp (55+DDD+número)</label>
-                  <div style={{display:'flex',gap:7}}>
-                    <input style={{...s.inp,flex:1}} placeholder="5563999990000" onBlur={e=>{if(e.target.value)salvarGestaoAluno(a.id,'tel',e.target.value);}}/>
-                    <span style={{fontSize:10,color:MUTED,alignSelf:'center'}}>↑ clique fora para salvar</span>
-                  </div>
-                </div>}
 
                 {/* Turmas */}
                 {a.turmas.length>0&&<>
@@ -443,7 +515,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                 {/* Faltas */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                   <div style={{fontSize:9,color:MUTED,textTransform:'uppercase',letterSpacing:1}}>Faltas registradas</div>
-                  <button onClick={()=>setAddingFalta(addingFalta===a.id?null:a.id)} style={{...s.btnS,fontSize:9,padding:'3px 8px',borderColor:WARN,color:WARN}}>+ Registrar falta</button>
+                  <button onClick={()=>setAddingFalta(addingFalta===a.id?null:a.id)} style={{...s.btnS,fontSize:9,padding:'3px 8px',borderColor:WARN,color:WARN}}>+ Falta</button>
                 </div>
                 {addingFalta===a.id&&<div style={{display:'flex',gap:7,marginBottom:8,alignItems:'center'}}>
                   <input type="date" style={{...s.inp,flex:1,fontSize:12}} value={faltaData} onChange={e=>setFaltaData(e.target.value)}/>
