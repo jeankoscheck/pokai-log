@@ -1059,7 +1059,7 @@ export default function App(){
               </div>
             )}
             {!loading&&coachTab===2&&editTpl&&<TemplateForm tpl={editTpl} onSave={saveTpl} onCancel={()=>setEditTpl(null)}/>}
-            {coachTab===3&&<ProfessorDashboard/>}
+            {coachTab===3&&<ProfessorDashboard allStudents={allStudents} studProfiles={studProfiles}/>}
           </div>
         )}
       </div>
