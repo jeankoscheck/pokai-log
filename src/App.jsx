@@ -490,8 +490,12 @@ export default function App(){
   };
 
   const login=async()=>{
-    const name=nameInput.trim();if(!name)return;setLoading(true);
-    await sb.upsert('students',{id:name,name});setStudent(name);
+    const raw=nameInput.trim();if(!raw)return;setLoading(true);
+    // Busca case-insensitive para evitar duplicatas por capitalização
+    const existing=await sb.get('students',`name=ilike.${encodeURIComponent(raw)}`);
+    const name=existing?.[0]?.name||raw;
+    if(!existing?.[0])await sb.upsert('students',{id:name,name});
+    setStudent(name);
     const d=await sb.get('students',`id=eq.${encodeURIComponent(name)}`);
     const p=d?.[0];setProfile(p);setLoading(false);
     if(!p?.age||!p?.height){setView('profile-setup');}else{setView('calendar');}
