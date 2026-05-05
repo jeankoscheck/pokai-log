@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const SB_URL=import.meta.env.VITE_SUPABASE_URL||'https://xvyvqmvcjwvedfkdygco.supabase.co';
+const SB_URL=(import.meta.env.VITE_SUPABASE_URL||'https://xvyvqmvcjwvedfkdygco.supabase.co').replace(/\/rest\/v1\/?$/,'').replace(/\/$/,'');
 const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh2eXZxbXZjand2ZWRma2R5Z2NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNjI1MDQsImV4cCI6MjA5MjYzODUwNH0.WYunV6-RzcxuVGjrp5jMLo5Lsyi1OHxYVRXC7ktvJfY';
 const HDR={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
 
