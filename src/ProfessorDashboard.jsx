@@ -65,10 +65,14 @@ const s={
 
 const TABS=['📊 Resumo','👥 Alunos','💰 Financeiro','📅 Agenda','⚙️ Config'];
 
-// Aviso para criar a tabela no Supabase
-function SetupBanner(){
+const SQL_GESTAO=`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  plano text default '3x',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}'\n);`;
+const SQL_LANCAMENTOS=`create table if not exists lancamentos (\n  id text primary key,\n  data text,\n  descricao text,\n  valor numeric,\n  tipo text check (tipo in ('entrada','saida')),\n  created_at text\n);`;
+
+// Aviso para criar tabelas no Supabase
+function SetupBanner({missingGestao,missingLanc}){
   const[show,setShow]=useState(true);
-  if(!show)return null;
+  if(!show||(!missingGestao&&!missingLanc))return null;
+  const sql=[missingGestao?SQL_GESTAO:'',missingLanc?SQL_LANCAMENTOS:''].filter(Boolean).join('\n\n');
   return(
     <div style={{...s.card,border:`1px solid ${WARN}`,marginBottom:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
@@ -76,13 +80,14 @@ function SetupBanner(){
         <button onClick={()=>setShow(false)} style={{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16}}>✕</button>
       </div>
       <p style={{fontSize:11,color:MUTED,marginBottom:10,lineHeight:1.6}}>
-        Para salvar dados de gestão (plano, vencimento, WhatsApp, turmas) crie a tabela <strong style={{color:WARN}}>gestao</strong> no Supabase.<br/>
+        {missingGestao&&<>Tabela <strong style={{color:WARN}}>gestao</strong> não encontrada — dados de alunos não serão salvos.<br/></>}
+        {missingLanc&&<>Tabela <strong style={{color:WARN}}>lancamentos</strong> não encontrada — lançamentos financeiros não serão salvos.<br/></>}
         Acesse <strong style={{color:INFO}}>supabase.com → SQL Editor</strong> e execute o SQL abaixo:
       </p>
-      <div style={{background:BG,borderRadius:8,padding:'10px 12px',fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#aaa',lineHeight:1.8,marginBottom:8,overflow:'auto'}}>
-        {`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  plano text default '3x',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}'\n);`}
+      <div style={{background:BG,borderRadius:8,padding:'10px 12px',fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#aaa',lineHeight:1.8,marginBottom:8,overflow:'auto',whiteSpace:'pre'}}>
+        {sql}
       </div>
-      <button style={{...s.btnS,fontSize:10}} onClick={()=>{navigator.clipboard?.writeText(`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  plano text default '3x',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}'\n);`);alert('SQL copiado!');}}>
+      <button style={{...s.btnS,fontSize:10}} onClick={()=>{navigator.clipboard?.writeText(sql);alert('SQL copiado! Cole no SQL Editor do Supabase.');}}>
         📋 Copiar SQL
       </button>
     </div>
@@ -93,6 +98,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   const[tab,setTab]           =useState(0);
   const[gestao,setGestao]     =useState({});        // dados do Supabase por student_id
   const[tableExists,setTableExists]=useState(true);
+  const[lancTableExists,setLancTableExists]=useState(true);
   const[planos,setPlanos]     =useState(PLANOS_DEFAULT);
   const[lanc,setLanc]         =useState([]);
   const[loadingLanc,setLoadingLanc]=useState(false);
@@ -136,6 +142,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   const loadLancamentos=async()=>{
     setLoadingLanc(true);
     const d=await sb.get('lancamentos','order=data.desc');
+    if(d===null){setLancTableExists(false);}else{setLancTableExists(true);}
     setLanc(d||[]);
     setLoadingLanc(false);
   };
@@ -282,7 +289,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   return(
     <div style={{fontFamily:"'Outfit',sans-serif",color:TEXT}}>
 
-      {!tableExists&&<SetupBanner/>}
+      {(!tableExists||!lancTableExists)&&<SetupBanner missingGestao={!tableExists} missingLanc={!lancTableExists}/>}
 
       {/* Sub-tabs */}
       <div style={{overflowX:'auto',scrollbarWidth:'none',marginBottom:14}}>
@@ -678,6 +685,11 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
 
           {loadingLanc?(
             <div style={{textAlign:'center',padding:'20px',color:MUTED,fontSize:12}}>Carregando...</div>
+          ):!lancTableExists?(
+            <div style={{textAlign:'center',padding:'24px',color:WARN,fontSize:12,border:`2px dashed rgba(232,160,32,0.3)`,borderRadius:8}}>
+              ⚠️ Tabela <strong>lancamentos</strong> não existe no Supabase.<br/>
+              <span style={{color:MUTED}}>Veja o aviso no topo desta aba para criar.</span>
+            </div>
           ):lanc.length===0?(
             <div style={{textAlign:'center',padding:'24px',color:MUTED,fontSize:12,border:`2px dashed ${BDR}`,borderRadius:8}}>Nenhum lançamento ainda.<br/>Clique em "+ Novo" para adicionar entradas ou saídas.</div>
           ):(
