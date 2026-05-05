@@ -7,6 +7,7 @@ const HDR={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'ap
 const sb={
   async get(t,q=''){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok)return null;return r.json();}catch{return null;}},
   async upsert(t,d){try{const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(d)});return r.ok;}catch{return false;}},
+  async del(t,q){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{method:'DELETE',headers:HDR});return r.ok;}catch{return false;}},
 };
 
 const ACC='#8DC63F',BG='#060606',SURF2='#181818',BDR='#272727';
@@ -34,12 +35,6 @@ const PLANOS_DEFAULT=[
   {id:'2x',nome:'2x na semana',valor:130},
   {id:'3x',nome:'3x na semana',valor:180},
   {id:'5x',nome:'5x na semana',valor:250},
-];
-const LANC_INIT=[
-  {data:'2026-05-02',desc:'Mensalidade Rafael Torres',valor:250,tipo:'entrada'},
-  {data:'2026-05-01',desc:'Aluguel da sala',valor:1200,tipo:'saida'},
-  {data:'2026-05-03',desc:'Equipamentos',valor:350,tipo:'saida'},
-  {data:'2026-04-25',desc:'Energia elétrica',valor:280,tipo:'saida'},
 ];
 
 const s={
@@ -89,7 +84,13 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   const[gestao,setGestao]     =useState({});        // dados do Supabase por student_id
   const[tableExists,setTableExists]=useState(true);
   const[planos,setPlanos]     =useState(PLANOS_DEFAULT);
-  const[lanc]                 =useState(LANC_INIT);
+  const[lanc,setLanc]         =useState([]);
+  const[loadingLanc,setLoadingLanc]=useState(false);
+  const[reserva,setReserva]   =useState(()=>parseFloat(localStorage.getItem('pokai_reserva')||'3200'));
+  const[editReserva,setEditReserva]=useState(false);
+  const[reservaInput,setReservaInput]=useState('');
+  const[showAddLanc,setShowAddLanc]=useState(false);
+  const[newLanc,setNewLanc]   =useState({data:'',descricao:'',valor:'',tipo:'saida'});
   const[selAluno,setSelAluno] =useState(null);
   const[agSel,setAgSel]       =useState(null);
   const[showPix,setShowPix]   =useState(null);
@@ -119,7 +120,33 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
       (data||[]).forEach(g=>{map[g.student_id]=g;});
       setGestao(map);
     });
+    loadLancamentos();
   },[]);
+
+  const loadLancamentos=async()=>{
+    setLoadingLanc(true);
+    const d=await sb.get('lancamentos','order=data.desc');
+    setLanc(d||[]);
+    setLoadingLanc(false);
+  };
+  const addLancamento=async()=>{
+    if(!newLanc.descricao||!newLanc.valor)return;
+    const id=String(Date.now());
+    const data=newLanc.data||new Date().toISOString().slice(0,10);
+    await sb.upsert('lancamentos',{id,data,descricao:newLanc.descricao,valor:parseFloat(newLanc.valor),tipo:newLanc.tipo,created_at:new Date().toISOString()});
+    setNewLanc({data:'',descricao:'',valor:'',tipo:'saida'});
+    setShowAddLanc(false);
+    await loadLancamentos();
+  };
+  const delLancamento=async(id)=>{
+    await sb.del('lancamentos',`id=eq.${id}`);
+    setLanc(p=>p.filter(l=>l.id!==id));
+  };
+  const saveReserva=(val)=>{
+    setReserva(val);
+    localStorage.setItem('pokai_reserva',String(val));
+    setEditReserva(false);
+  };
 
   // Alunos = lista real do Supabase + dados de gestão mesclados
   const alunos = allStudents.map(name=>({
@@ -219,13 +246,12 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   alunos.forEach(a=>(a.turmas||[]).forEach(t=>{if(!turmaMap[t])turmaMap[t]=[];turmaMap[t].push(a);}));
   const ativos    =alunos.filter(a=>a.ativo);
   const atrasados =ativos.filter(a=>!a.pago&&diffDays(getVencimento(a))<0);
-  const entradas  =lanc.filter(e=>e.tipo==='entrada').reduce((a,e)=>a+e.valor,0);
-  const saidas    =lanc.filter(e=>e.tipo==='saida').reduce((a,e)=>a+e.valor,0);
+  const entradas  =lanc.filter(e=>e.tipo==='entrada').reduce((a,e)=>a+parseFloat(e.valor||0),0);
+  const saidas    =lanc.filter(e=>e.tipo==='saida').reduce((a,e)=>a+parseFloat(e.valor||0),0);
   const potencial =ativos.reduce((a,al)=>a+getValor(al,planos),0);
   const inadimp   =ativos.filter(a=>!a.pago).reduce((a,al)=>a+getValor(al,planos),0);
   const ticket    =ativos.length?Math.round(potencial/ativos.length):0;
   const custo     =ativos.length?Math.round(saidas/ativos.length):0;
-  const reserva   =3200;
   const totalVagas=(DIAS.length*HORARIOS.length+1)*CAP;
   const totalOcup =Object.values(turmaMap).reduce((a,v)=>a+v.filter(al=>al.ativo).length,0);
   const ocup      =totalVagas?Math.round((totalOcup/totalVagas)*100):0;
@@ -249,12 +275,14 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
       {!tableExists&&<SetupBanner/>}
 
       {/* Sub-tabs */}
-      <div style={{display:'flex',gap:3,background:SURF2,borderRadius:999,padding:3,border:`1px solid ${BDR}`,marginBottom:14}}>
-        {TABS.map((t,i)=>(
-          <button key={i} onClick={()=>setTab(i)} style={{flex:1,padding:'6px 2px',borderRadius:999,border:'none',cursor:'pointer',fontSize:10,fontWeight:700,background:tab===i?ACC:'transparent',color:tab===i?'#000':MUTED,transition:'all 0.2s'}}>
-            {t}
-          </button>
-        ))}
+      <div style={{overflowX:'auto',scrollbarWidth:'none',marginBottom:14}}>
+        <div style={{display:'flex',gap:3,background:SURF2,borderRadius:999,padding:3,border:`1px solid ${BDR}`,minWidth:'max-content'}}>
+          {TABS.map((t,i)=>(
+            <button key={i} onClick={()=>setTab(i)} style={{flexShrink:0,padding:'6px 14px',borderRadius:999,border:'none',cursor:'pointer',fontSize:10,fontWeight:700,whiteSpace:'nowrap',background:tab===i?ACC:'transparent',color:tab===i?'#000':MUTED,transition:'all 0.2s'}}>
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       {atrasados.length>0&&(
@@ -267,12 +295,29 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
       {/* ── RESUMO ── */}
       {tab===0&&<div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
-          {[['👥 Alunos ativos',ativos.length,ACC],['💰 Receita potencial',`R$${potencial}`,ACC],['⚠️ Inadimplência',`R$${inadimp}`,WARN],['🏦 Reserva',`R$${reserva.toLocaleString('pt-BR')}`,INFO]].map(([k,v,c])=>(
+          {[['👥 Alunos ativos',ativos.length,ACC],['💰 Receita potencial',`R$${potencial}`,ACC],['⚠️ Inadimplência',`R$${inadimp}`,WARN]].map(([k,v,c])=>(
             <div key={k} style={{...s.card,textAlign:'center'}}>
               <div style={{fontSize:10,color:MUTED,marginBottom:3}}>{k}</div>
               <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:c}}>{v}</div>
             </div>
           ))}
+          <div style={{...s.card,textAlign:'center',position:'relative'}}>
+            <div style={{fontSize:10,color:MUTED,marginBottom:3}}>🏦 Reserva</div>
+            {editReserva?(
+              <div>
+                <input type="number" autoFocus style={{...s.inp,fontSize:16,textAlign:'center',marginBottom:6}} value={reservaInput} onChange={e=>setReservaInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveReserva(parseFloat(reservaInput)||0)}/>
+                <div style={{display:'flex',gap:5,justifyContent:'center'}}>
+                  <button style={{...s.btnS,fontSize:10,padding:'3px 8px'}} onClick={()=>setEditReserva(false)}>✕</button>
+                  <button style={{...s.btnP,fontSize:10,padding:'3px 10px'}} onClick={()=>saveReserva(parseFloat(reservaInput)||0)}>💾</button>
+                </div>
+              </div>
+            ):(
+              <>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:INFO}}>R${reserva.toLocaleString('pt-BR')}</div>
+                <button onClick={()=>{setEditReserva(true);setReservaInput(String(reserva));}} style={{position:'absolute',top:8,right:8,background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:11}}>✏️</button>
+              </>
+            )}
+          </div>
         </div>
 
         <div style={s.card}>
@@ -544,21 +589,38 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
       {/* ── FINANCEIRO ── */}
       {tab===2&&<div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:10}}>
-          {[['Entradas',`R$${entradas}`,ACC],['Saídas',`R$${saidas}`,DANGER],['Saldo',`R$${entradas-saidas}`,entradas-saidas>=0?ACC:DANGER]].map(([k,v,c])=>(
+          {[['Entradas',`R$${entradas}`,ACC],['Saídas',`R$${saidas}`,DANGER],['Saldo',`R${entradas-saidas>=0?'$':'$-'}${Math.abs(entradas-saidas)}`,entradas-saidas>=0?ACC:DANGER]].map(([k,v,c])=>(
             <div key={k} style={{...s.card,textAlign:'center'}}>
               <div style={{fontSize:10,color:MUTED,marginBottom:2}}>{k}</div>
-              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:c}}>{v}</div>
+              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:c}}>{v}</div>
             </div>
           ))}
         </div>
+
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+          {/* Reserva editável */}
           <div style={{...s.card,border:`1px solid rgba(141,198,63,0.2)`}}>
-            <div style={{...s.hd,color:ACC}}>RESERVA</div>
-            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:ACC}}>R${reserva.toLocaleString('pt-BR')}</div>
-            <div style={{fontSize:10,color:MUTED}}>Meta R$5.000 · {Math.round((reserva/5000)*100)}%</div>
-            <div style={{height:5,background:'rgba(255,255,255,0.06)',borderRadius:3,marginTop:6,overflow:'hidden'}}>
-              <div style={{width:`${(reserva/5000)*100}%`,height:'100%',background:ACC,borderRadius:3}}/>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+              <div style={{...s.hd,color:ACC,marginBottom:0}}>RESERVA</div>
+              {!editReserva&&<button style={{...s.btnS,fontSize:9,padding:'2px 8px'}} onClick={()=>{setEditReserva(true);setReservaInput(String(reserva));}}>✏️ Editar</button>}
             </div>
+            {editReserva?(
+              <div>
+                <input type="number" autoFocus style={{...s.inp,fontSize:16,textAlign:'center',marginBottom:7}} value={reservaInput} onChange={e=>setReservaInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveReserva(parseFloat(reservaInput)||0)} placeholder="3200"/>
+                <div style={{display:'flex',gap:6}}>
+                  <button style={{...s.btnS,flex:1,fontSize:10}} onClick={()=>setEditReserva(false)}>Cancelar</button>
+                  <button style={{...s.btnP,flex:1,fontSize:10}} onClick={()=>saveReserva(parseFloat(reservaInput)||0)}>💾 Salvar</button>
+                </div>
+              </div>
+            ):(
+              <>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:ACC}}>R${reserva.toLocaleString('pt-BR')}</div>
+                <div style={{fontSize:10,color:MUTED}}>Meta R$5.000 · {Math.round((reserva/5000)*100)}%</div>
+                <div style={{height:5,background:'rgba(255,255,255,0.06)',borderRadius:3,marginTop:6,overflow:'hidden'}}>
+                  <div style={{width:`${Math.min(100,(reserva/5000)*100)}%`,height:'100%',background:ACC,borderRadius:3}}/>
+                </div>
+              </>
+            )}
           </div>
           <div style={{...s.card,border:`1px solid rgba(232,160,32,0.2)`}}>
             <div style={{...s.hd,color:WARN}}>A RECEBER</div>
@@ -566,20 +628,64 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
             <div style={{fontSize:10,color:MUTED}}>{ativos.filter(a=>!a.pago).length} pendentes</div>
           </div>
         </div>
+
+        {/* Lançamentos */}
         <div style={s.card}>
-          <div style={s.hd}>LANÇAMENTOS (EXEMPLO)</div>
-          <p style={{fontSize:10,color:MUTED,marginBottom:10}}>Em breve: lançamentos salvos no Supabase. Por ora, dados de exemplo.</p>
-          <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Data','Descrição','Tipo','Valor'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
-            <tbody>{[...lanc].sort((a,b)=>b.data.localeCompare(a.data)).map((e,i)=>(
-              <tr key={i}>
-                <td style={{...s.td,fontSize:10}}>{e.data}</td>
-                <td style={s.td}>{e.desc}</td>
-                <td style={s.td}>{e.tipo==='entrada'?<span style={s.tag}>Entrada</span>:<span style={s.tagD}>Saída</span>}</td>
-                <td style={{...s.td,color:e.tipo==='entrada'?ACC:DANGER,fontFamily:"'JetBrains Mono',monospace"}}>{e.tipo==='entrada'?'+':'-'}R${e.valor}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={s.hd}>LANÇAMENTOS</div>
+            <button style={s.btnP} onClick={()=>setShowAddLanc(v=>!v)}>+ Novo</button>
+          </div>
+
+          {showAddLanc&&(
+            <div style={{background:BG,borderRadius:8,padding:'12px',marginBottom:12,border:`1px solid ${ACC}`}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={s.lbl}>Descrição</label>
+                  <input style={s.inp} value={newLanc.descricao} onChange={e=>setNewLanc(p=>({...p,descricao:e.target.value}))} placeholder="Ex: Aluguel da sala"/>
+                </div>
+                <div>
+                  <label style={s.lbl}>Data</label>
+                  <input type="date" style={s.inp} value={newLanc.data} onChange={e=>setNewLanc(p=>({...p,data:e.target.value}))}/>
+                </div>
+                <div>
+                  <label style={s.lbl}>Valor (R$)</label>
+                  <input type="number" step="0.01" style={s.inp} value={newLanc.valor} onChange={e=>setNewLanc(p=>({...p,valor:e.target.value}))} placeholder="0"/>
+                </div>
+                <div style={{gridColumn:'1/-1',display:'flex',gap:8}}>
+                  {['entrada','saida'].map(t=>(
+                    <button key={t} onClick={()=>setNewLanc(p=>({...p,tipo:t}))} style={{flex:1,padding:'8px',borderRadius:7,border:`1px solid ${newLanc.tipo===t?(t==='entrada'?ACC:DANGER):BDR}`,background:newLanc.tipo===t?(t==='entrada'?'rgba(141,198,63,0.1)':'rgba(224,80,80,0.1)'):'transparent',color:newLanc.tipo===t?(t==='entrada'?ACC:DANGER):MUTED,cursor:'pointer',fontSize:11,fontWeight:700}}>
+                      {t==='entrada'?'✅ Entrada':'❌ Saída'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:7}}>
+                <button style={s.btnS} onClick={()=>setShowAddLanc(false)}>Cancelar</button>
+                <button style={s.btnP} onClick={addLancamento} disabled={!newLanc.descricao||!newLanc.valor}>💾 Salvar</button>
+              </div>
+            </div>
+          )}
+
+          {loadingLanc?(
+            <div style={{textAlign:'center',padding:'20px',color:MUTED,fontSize:12}}>Carregando...</div>
+          ):lanc.length===0?(
+            <div style={{textAlign:'center',padding:'24px',color:MUTED,fontSize:12,border:`2px dashed ${BDR}`,borderRadius:8}}>Nenhum lançamento ainda.<br/>Clique em "+ Novo" para adicionar entradas ou saídas.</div>
+          ):(
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead><tr>{['Data','Descrição','Tipo','Valor',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {[...lanc].sort((a,b)=>(b.data||'').localeCompare(a.data||'')).map(e=>(
+                  <tr key={e.id}>
+                    <td style={{...s.td,fontSize:10,whiteSpace:'nowrap'}}>{e.data||'—'}</td>
+                    <td style={s.td}>{e.descricao}</td>
+                    <td style={{...s.td,whiteSpace:'nowrap'}}>{e.tipo==='entrada'?<span style={s.tag}>Entrada</span>:<span style={s.tagD}>Saída</span>}</td>
+                    <td style={{...s.td,color:e.tipo==='entrada'?ACC:DANGER,fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{e.tipo==='entrada'?'+':'-'}R${parseFloat(e.valor).toFixed(0)}</td>
+                    <td style={s.td}><button style={{background:'none',border:'none',color:DANGER,cursor:'pointer',fontSize:14,padding:'0 4px'}} onClick={()=>delLancamento(e.id)}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>}
 

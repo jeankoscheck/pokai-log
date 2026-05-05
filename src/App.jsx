@@ -595,6 +595,8 @@ export default function App(){
   const[postingFeed,setPostingFeed]=useState(false);
   const[feedCommentText,setFeedCommentText]=useState({});
   const[expandedPost,setExpandedPost]=useState(null);
+  const PROFESSORS=['Jean','Marcos','Colônia','Diogo'];
+  const[coachName,setCoachName]=useState('Jean');
 
   useEffect(()=>{loadTemplates();},[]);
   useEffect(()=>{if(student){loadLogs(student);loadProfile(student);loadWeightLogs(student);}},[student]);
@@ -621,13 +623,13 @@ export default function App(){
   const postToFeed=async(isCoachPost=false)=>{
     const text=newPostText.trim();if(!text)return;
     setPostingFeed(true);
-    const author=isCoachPost?'Professor':student;
+    const author=isCoachPost?coachName:student;
     await sb.upsert('feed_posts',{id:String(Date.now()),author,is_coach:isCoachPost,content:text,created_at:new Date().toISOString(),likes:[]});
     setNewPostText('');await loadFeed();setPostingFeed(false);
   };
   const likePost=async(postId)=>{
     const post=feedPosts.find(p=>p.id===postId);if(!post)return;
-    const liker=view==='coach'?'Professor':student;
+    const liker=view==='coach'?coachName:student;
     const likes=Array.isArray(post.likes)?post.likes:[];
     const newLikes=likes.includes(liker)?likes.filter(l=>l!==liker):[...likes,liker];
     setFeedPosts(prev=>prev.map(p=>p.id===postId?{...p,likes:newLikes}:p));
@@ -635,7 +637,7 @@ export default function App(){
   };
   const addComment=async(postId)=>{
     const text=(feedCommentText[postId]||'').trim();if(!text)return;
-    const author=view==='coach'?'Professor':student;
+    const author=view==='coach'?coachName:student;
     const isCoachCmt=view==='coach';
     await sb.upsert('feed_comments',{id:String(Date.now()),post_id:postId,author,is_coach:isCoachCmt,content:text,created_at:new Date().toISOString()});
     setFeedCommentText(p=>({...p,[postId]:''}));await loadPostComments(postId);
@@ -1325,7 +1327,19 @@ export default function App(){
             {!loading&&coachTab===2&&editTpl&&<TemplateForm tpl={editTpl} onSave={saveTpl} onCancel={()=>setEditTpl(null)}/>}
             {coachTab===3&&<ProfessorDashboard allStudents={allStudents} studProfiles={studProfiles}/>}
             {coachTab===4&&(
-              <FeedView posts={feedPosts} author="Professor" isCoach={true} newText={newPostText} setNewText={setNewPostText} onPost={()=>postToFeed(true)} posting={postingFeed} onLike={likePost} comments={feedComments} commentText={feedCommentText} setCommentText={setFeedCommentText} onComment={addComment} onLoadComments={loadPostComments} expandedPost={expandedPost} setExpandedPost={setExpandedPost}/>
+              <div>
+                <div style={{marginBottom:14,padding:'10px 14px',background:'rgba(15,15,15,0.8)',border:`1px solid ${BDR}`,borderRadius:10}}>
+                  <div style={{fontSize:10,color:MUTED,letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>Postando como professor:</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {PROFESSORS.map(p=>(
+                      <button key={p} onClick={()=>setCoachName(p)} style={{padding:'6px 16px',borderRadius:999,border:`1px solid ${coachName===p?ACC:BDR}`,background:coachName===p?'rgba(141,198,63,0.12)':'transparent',color:coachName===p?ACC:MUTED,cursor:'pointer',fontSize:12,fontFamily:"'Outfit',sans-serif",fontWeight:coachName===p?700:400,transition:'all 0.15s'}}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <FeedView posts={feedPosts} author={coachName} isCoach={true} newText={newPostText} setNewText={setNewPostText} onPost={()=>postToFeed(true)} posting={postingFeed} onLike={likePost} comments={feedComments} commentText={feedCommentText} setCommentText={setFeedCommentText} onComment={addComment} onLoadComments={loadPostComments} expandedPost={expandedPost} setExpandedPost={setExpandedPost}/>
+              </div>
             )}
           </div>
         )}
