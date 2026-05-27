@@ -84,6 +84,91 @@ const TABS=['📊 Resumo','👥 Alunos','💰 Financeiro','📅 Agenda','⚙️ 
 const SQL_GESTAO=`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  email text,\n  plano text default '3x_mensal',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}',\n  inicio_contrato text,\n  fim_contrato text,\n  valor_contrato numeric,\n  codigo_externo text\n);\n\n-- Se a tabela já existe, adicionar colunas faltantes:\nalter table gestao add column if not exists email text;\nalter table gestao add column if not exists inicio_contrato text;\nalter table gestao add column if not exists fim_contrato text;\nalter table gestao add column if not exists valor_contrato numeric;\nalter table gestao add column if not exists codigo_externo text;`;
 const SQL_LANCAMENTOS=`create table if not exists lancamentos (\n  id text primary key,\n  data text,\n  descricao text,\n  valor numeric,\n  tipo text check (tipo in ('entrada','saida')),\n  created_at text\n);`;
 
+const SQL_IMPORT=`-- PŌKAI — Importação de contratos (37 alunos)
+-- Execute no Supabase → SQL Editor
+
+-- PASSO 1: colunas de contrato (seguro reexecutar)
+alter table gestao add column if not exists email text;
+alter table gestao add column if not exists inicio_contrato text;
+alter table gestao add column if not exists fim_contrato text;
+alter table gestao add column if not exists valor_contrato numeric;
+alter table gestao add column if not exists codigo_externo text;
+
+-- PASSO 2: criar 19 novos alunos
+insert into students (id, name) values
+  ('Agni Ferreira Frota','Agni Ferreira Frota'),
+  ('Amanda Farah','Amanda Farah'),
+  ('André Luiz Ortegal','André Luiz Ortegal'),
+  ('André Torres dos Santos','André Torres dos Santos'),
+  ('Arthur Eduardo Santos Leone','Arthur Eduardo Santos Leone'),
+  ('Chistiani Haddad Vieira da Silva','Chistiani Haddad Vieira da Silva'),
+  ('Kiko Rodopoulos','Kiko Rodopoulos'),
+  ('Lucas Soares','Lucas Soares'),
+  ('Luiz Felipe Baracat','Luiz Felipe Baracat'),
+  ('Marcio Machado','Marcio Machado'),
+  ('Margareth Koscheck','Margareth Koscheck'),
+  ('Palloma Meneghello','Palloma Meneghello'),
+  ('Paulo Araujo','Paulo Araujo'),
+  ('Pedro Viana','Pedro Viana'),
+  ('Renato Kaylan Alves de Oliveira França','Renato Kaylan Alves de Oliveira França'),
+  ('Rodrigo Viana','Rodrigo Viana'),
+  ('Rubia Danyla Gama Pinheiro','Rubia Danyla Gama Pinheiro'),
+  ('Sabrina de Oliveira Ferreira Santos','Sabrina de Oliveira Ferreira Santos'),
+  ('Tatiana Ferreira Tamer Lyrio','Tatiana Ferreira Tamer Lyrio')
+on conflict (id) do nothing;
+
+-- PASSO 3: upsert contratos (37 alunos)
+insert into gestao (student_id,plano,dia_venc,pago,ativo,turmas,faltas,email,tel,inicio_contrato,fim_contrato,valor_contrato,codigo_externo) values
+('Ana Luiza Viana','3x_anual',10,false,true,'[]','{}','anafortesviana@gmail.com','5561981549171','2026-02-10','2027-02-09',5760,'119'),
+('Breno Zoehler','3x_semestral',7,false,true,'[]','{}','voeicaro@gmail.com','5561999791196','2026-04-07','2026-10-06',3300,'128'),
+('Christian Lins Zeredo','3x_anual',10,false,true,'[]','{}','chris@chrisbr.com','5561986330123','2025-07-10','2026-07-09',4800,'10'),
+('Danielli Xavier Tamietti Duraes','3x_mensal',8,false,true,'[]','{}','danitamietti@gmail.com','5561991520690','2026-05-08','2026-06-07',620,'104'),
+('DIEGO PAIVA','3x_anual',23,false,true,'[]','{}','diego@advogadospaiva.com.br','5561996469900','2026-01-23','2027-01-22',5760,'102'),
+('Gabriela Loureiro de Lima','3x_anual',9,false,true,'[]','{}','gabi.lloureirolima@gmail.com','5561992988269','2025-06-09','2026-06-08',5280,'87'),
+('Gabriella Alencar','ilimitado_semestral',3,false,true,'[]','{}','gabi_alencar94@hotmail.com','5561982605527','2026-04-03','2026-10-02',3900,'69'),
+('Guilherme Amorim','2x_semestral',5,false,true,'[]','{}','amorim.gui@gmail.com','5561996417080','2026-02-05','2026-08-04',2640,'121'),
+('Isabela Fioravanti','2x_anual',15,false,true,'[]','{}','isaalvessfs@gmail.com',null,'2026-03-15','2027-03-14',4620,'122'),
+('Mariana Lanna','ilimitado_anual',4,false,true,'[]','{}','marianalanna@hotmail.com','5561992080266','2026-02-04','2027-02-03',8580,'105'),
+('Paulo Renato Souza Cunha','3x_anual',2,false,true,'[]','{}','paulorenatocunha85@gmail.com','5561998498585','2026-01-02','2027-01-01',5760,'131'),
+('Phillipe Oliveira Vilela','ilimitado_anual',4,false,true,'[]','{}','phillipevilela@hotmail.com','5561999815054','2026-03-04','2027-03-03',8580,'115'),
+('Pollyanna Zoehler Santa Helena','2x_semestral',2,false,true,'[]','{}','mandaprapolly@gmail.com','5561992695274','2026-02-02','2026-08-01',2640,'129'),
+('Roberta Azevedo','3x_semestral',15,false,true,'[]','{}','roberta.azevedo.graca@gmail.com','5561999855980','2026-01-15','2026-07-14',3300,'109'),
+('Romário Veras Santos Filho','ilimitado_anual',5,false,true,'[]','{}','romariofilho23@hotmail.com','5561998180605','2026-04-05','2027-04-04',8580,'111'),
+('Valentina Castilho de Araújo Paiva','ilimitado_anual',8,false,true,'[]','{}','valentinacastilho@gmail.com','5561999759998','2026-04-08','2027-04-07',6000,'80'),
+('Vilson Vedana','3x_anual',5,false,true,'[]','{}','vilson.vedana@gmail.com','5561981589985','2026-04-05','2027-04-04',6950,'49'),
+('Vitor Marques','2x_anual',12,false,true,'[]','{}','vitorvieira_88@hotmail.com','5561999872634','2026-05-12','2027-05-11',4620,'134'),
+('Agni Ferreira Frota','3x_anual',2,false,true,'[]','{}','agniff@gmail.com','5561983636538','2025-12-02','2026-12-01',4560,'123'),
+('Amanda Farah','ilimitado_anual',9,false,true,'[]','{}','amandafarah94@gmail.com','5561996622259','2025-10-09','2026-10-08',6000,'85'),
+('André Luiz Ortegal','ilimitado_anual',28,false,true,'[]','{}','andre.luiz.ortegal@gmail.com','5561981162770','2026-01-30','2027-01-29',8580,'120'),
+('André Torres dos Santos','ilimitado_anual',22,false,true,'[]','{}','andrehp26@gmail.com','5561981729999','2026-01-22','2027-01-21',8580,'91'),
+('Arthur Eduardo Santos Leone','3x_anual',21,false,true,'[]','{}','tucca8@hotmail.com','5571992710826','2026-01-21','2027-01-20',5760,'118'),
+('Chistiani Haddad Vieira da Silva','2x_semestral',8,false,true,'[]','{}','christianihaddad@gmail.com','5561991711478','2026-04-08','2026-10-06',2640,'136'),
+('Kiko Rodopoulos','ilimitado_anual',28,false,true,'[]','{}','rodopouloskiko@gmail.com','5561991346850','2026-02-28','2027-02-27',6000,'22'),
+('Lucas Soares','3x_semestral',7,false,true,'[]','{}','lucaslnhrs@gmail.com','5561983378230','2026-02-07','2026-08-06',3300,'133'),
+('Luiz Felipe Baracat','3x_anual',9,false,true,'[]','{}','luizfelipebaracat@gmail.com','5561991061239','2026-04-09','2027-04-08',5760,'27'),
+('Marcio Machado','2x_anual',12,false,true,'[]','{}',null,null,'2025-06-12','2026-06-11',4200,'125'),
+('Margareth Koscheck','2x_anual',12,false,true,'[]','{}',null,null,'2025-06-12','2026-06-11',4200,'124'),
+('Palloma Meneghello','3x_anual',18,false,true,'[]','{}','arquiteta@palloma.com.br','556184241709','2026-03-18','2027-03-17',5760,'68'),
+('Paulo Araujo','2x_anual',3,false,true,'[]','{}',null,'5561996099998','2026-02-03','2027-02-02',4620,'132'),
+('Pedro Viana','3x_anual',9,false,true,'[]','{}',null,'5561981549151','2026-03-09','2027-03-08',5760,'74'),
+('Renato Kaylan Alves de Oliveira França','2x_semestral',3,false,true,'[]','{}','renatokaylan@gmail.com','5561985560438','2026-03-03','2026-09-02',2640,'135'),
+('Rodrigo Viana','3x_anual',9,false,true,'[]','{}','rodrigosfviana@gmail.com','5561981882476','2026-03-09','2027-03-08',5760,'73'),
+('Rubia Danyla Gama Pinheiro','2x_anual',3,false,true,'[]','{}','rubiadanyla@gmail.com','5561981006557','2026-02-03','2027-02-02',4620,'103'),
+('Sabrina de Oliveira Ferreira Santos','2x_semestral',5,false,true,'[]','{}','sabrinaferreirasantos78@gmail.com','5561998501607','2026-01-05','2026-07-04',2640,'114'),
+('Tatiana Ferreira Tamer Lyrio','2x_semestral',5,false,true,'[]','{}','t.tamer@uol.com.br','5561981040609','2026-05-05','2026-11-04',2640,'138')
+on conflict (student_id) do update set
+  plano=excluded.plano,
+  email=coalesce(excluded.email,gestao.email),
+  tel=coalesce(excluded.tel,gestao.tel),
+  inicio_contrato=excluded.inicio_contrato,
+  fim_contrato=excluded.fim_contrato,
+  valor_contrato=excluded.valor_contrato,
+  codigo_externo=excluded.codigo_externo,
+  dia_venc=excluded.dia_venc,
+  ativo=excluded.ativo;
+  -- pago / turmas / faltas / nasc preservados`;
+
+
 // Aviso para criar tabelas no Supabase
 function SetupBanner({missingGestao,missingLanc}){
   const[show,setShow]=useState(true);
@@ -863,20 +948,21 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
         </div>
 
         <div style={s.card}>
-          <div style={{...s.hd,color:INFO,marginBottom:6}}>🗄️ SQL — MIGRAÇÃO DO BANCO</div>
-          <p style={{fontSize:11,color:MUTED,marginBottom:8,lineHeight:1.6}}>Execute no <strong style={{color:INFO}}>Supabase → SQL Editor</strong> para adicionar as colunas de contrato à tabela existente:</p>
-          <div style={{background:BG,borderRadius:8,padding:'10px 12px',fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#aaa',lineHeight:1.8,marginBottom:8,overflow:'auto',whiteSpace:'pre'}}>
-{`-- Adicionar colunas de contrato (seguro reexecutar):
-alter table gestao add column if not exists email text;
-alter table gestao add column if not exists inicio_contrato text;
-alter table gestao add column if not exists fim_contrato text;
-alter table gestao add column if not exists valor_contrato numeric;
-alter table gestao add column if not exists codigo_externo text;`}
+          <div style={{...s.hd,color:INFO,marginBottom:6}}>🗄️ SQL — IMPORTAÇÃO COMPLETA</div>
+          <p style={{fontSize:11,color:MUTED,marginBottom:8,lineHeight:1.6}}>
+            Cria colunas, adiciona 19 novos alunos e importa contratos de todos os 37 alunos.<br/>
+            Execute no <strong style={{color:INFO}}>Supabase → SQL Editor</strong>. Seguro reexecutar.
+          </p>
+          <div style={{background:BG,borderRadius:8,padding:'10px 12px',fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'#888',lineHeight:1.6,marginBottom:8,overflow:'auto',whiteSpace:'pre',maxHeight:160}}>
+{`-- Passo 1: colunas (alter table gestao add column if not exists ...)
+-- Passo 2: 19 novos alunos (insert into students ...)
+-- Passo 3: 37 registros gestao (insert into gestao ... on conflict do update)
+-- [clique em Copiar para ver o SQL completo]`}
           </div>
-          <button style={{...s.btnS,fontSize:10}} onClick={()=>{
-            navigator.clipboard?.writeText(`alter table gestao add column if not exists email text;\nalter table gestao add column if not exists inicio_contrato text;\nalter table gestao add column if not exists fim_contrato text;\nalter table gestao add column if not exists valor_contrato numeric;\nalter table gestao add column if not exists codigo_externo text;`);
-            alert('SQL copiado!');
-          }}>📋 Copiar SQL</button>
+          <button style={{...s.btnP,fontSize:11}} onClick={()=>{
+            navigator.clipboard?.writeText(SQL_IMPORT);
+            alert('SQL de importação copiado! Cole no Supabase → SQL Editor e execute.');
+          }}>📋 Copiar SQL de importação (37 alunos)</button>
         </div>
 
         <div style={s.card}>
