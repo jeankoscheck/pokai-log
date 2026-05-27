@@ -19,13 +19,24 @@ const CAP=12;
 const TODAY=new Date();
 
 const diffDays=v=>{if(!v||v==='—')return 999;return Math.floor((new Date(v)-TODAY)/(864e5));};
+const diffDaysContrato=a=>{if(!a.fim_contrato)return 999;return Math.floor((new Date(a.fim_contrato)-TODAY)/864e5);};
 const getVencimento=a=>{
   if(!a.dia_venc)return'—';
   const y=TODAY.getFullYear(),m=TODAY.getMonth()+1;
   const dia=Math.min(a.dia_venc,new Date(y,m,0).getDate());
   return`${y}-${String(m).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
 };
-const getValor=(a,planos)=>planos.find(p=>p.id===a.plano)?.valor||0;
+const getPeriodoDivisor=plano=>{
+  if(!plano)return 12;
+  if(plano.includes('mensal'))return 1;
+  if(plano.includes('semestral'))return 6;
+  return 12;
+};
+const getValorMensal=a=>{
+  if(a.valor_contrato)return Math.round(a.valor_contrato/getPeriodoDivisor(a.plano));
+  const legacy={'2x':130,'3x':180,'5x':250,'ilimitado':300};
+  return legacy[a.plano?.split('_')[0]]||legacy[a.plano]||0;
+};
 const crc16ccitt=(str)=>{
   let crc=0xFFFF;
   for(let i=0;i<str.length;i++){
@@ -42,9 +53,14 @@ const gerarPix=(chave,valor,benef)=>{
 };
 
 const PLANOS_DEFAULT=[
-  {id:'2x',nome:'2x na semana',valor:130},
-  {id:'3x',nome:'3x na semana',valor:180},
-  {id:'5x',nome:'5x na semana',valor:250},
+  {id:'2x_mensal',          nome:'2X Mensal'},
+  {id:'2x_semestral',       nome:'2X Semestral'},
+  {id:'2x_anual',           nome:'2X Anual'},
+  {id:'3x_mensal',          nome:'3X Mensal'},
+  {id:'3x_semestral',       nome:'3X Semestral'},
+  {id:'3x_anual',           nome:'3X Anual'},
+  {id:'ilimitado_semestral',nome:'Ilimitado Semestral'},
+  {id:'ilimitado_anual',    nome:'Ilimitado Anual'},
 ];
 
 const s={
@@ -65,7 +81,7 @@ const s={
 
 const TABS=['📊 Resumo','👥 Alunos','💰 Financeiro','📅 Agenda','⚙️ Config'];
 
-const SQL_GESTAO=`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  plano text default '3x',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}'\n);`;
+const SQL_GESTAO=`create table if not exists gestao (\n  student_id text primary key,\n  nasc text,\n  tel text,\n  email text,\n  plano text default '3x_mensal',\n  dia_venc integer default 10,\n  pago boolean default false,\n  ativo boolean default true,\n  turmas jsonb default '[]',\n  faltas jsonb default '{}',\n  inicio_contrato text,\n  fim_contrato text,\n  valor_contrato numeric,\n  codigo_externo text\n);\n\n-- Se a tabela já existe, adicionar colunas faltantes:\nalter table gestao add column if not exists email text;\nalter table gestao add column if not exists inicio_contrato text;\nalter table gestao add column if not exists fim_contrato text;\nalter table gestao add column if not exists valor_contrato numeric;\nalter table gestao add column if not exists codigo_externo text;`;
 const SQL_LANCAMENTOS=`create table if not exists lancamentos (\n  id text primary key,\n  data text,\n  descricao text,\n  valor numeric,\n  tipo text check (tipo in ('entrada','saida')),\n  created_at text\n);`;
 
 // Aviso para criar tabelas no Supabase
@@ -118,10 +134,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   const[pixBenef,setPixBenef] =useState('Pōkai CT');
   const[showPixCfg,setShowPixCfg]=useState(false);
   const[showNovoAluno,setShowNovoAluno]=useState(false);
-  const[showNovoPlan,setShowNovoPlan]=useState(false);
-  const[editPlan,setEditPlan] =useState(null);
-  const[novoPlan,setNovoPlan] =useState({nome:'',valor:''});
-  const[novoAluno,setNovoAluno]=useState({nome:'',nasc:'',tel:'',plano:'3x',dia_venc:10,turmas:[]});
+  const[novoAluno,setNovoAluno]=useState({nome:'',nasc:'',tel:'',email:'',plano:'3x_mensal',dia_venc:10,turmas:[],inicio_contrato:'',fim_contrato:'',valor_contrato:''});
   const[vencInput,setVencInput]=useState('');
   const[saving,setSaving]     =useState(null);
   const[editingAluno,setEditingAluno]=useState(null); // id do aluno em edição
@@ -171,12 +184,17 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
     nome:name,
     nasc:gestao[name]?.nasc||'',
     tel:gestao[name]?.tel||'',
-    plano:gestao[name]?.plano||'3x',
+    email:gestao[name]?.email||'',
+    plano:gestao[name]?.plano||'',
     dia_venc:gestao[name]?.dia_venc||10,
     pago:gestao[name]?.pago||false,
     ativo:gestao[name]?.ativo!==false,
     turmas:gestao[name]?.turmas||[],
     faltas:gestao[name]?.faltas||{},
+    inicio_contrato:gestao[name]?.inicio_contrato||'',
+    fim_contrato:gestao[name]?.fim_contrato||'',
+    valor_contrato:gestao[name]?.valor_contrato||0,
+    codigo_externo:gestao[name]?.codigo_externo||'',
     // dados de perfil do app
     peso:studProfiles[name]?.weight,
     altura:studProfiles[name]?.height,
@@ -185,7 +203,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
   // Salva campo de gestão no Supabase
   const saveGestao=async(name,fields)=>{
     setSaving(name);
-    const cur=gestao[name]||{student_id:name,plano:'3x',dia_venc:10,pago:false,ativo:true,turmas:[],faltas:{}};
+    const cur=gestao[name]||{student_id:name,plano:'3x_mensal',dia_venc:10,pago:false,ativo:true,turmas:[],faltas:{},email:'',inicio_contrato:null,fim_contrato:null,valor_contrato:null,codigo_externo:null};
     const updated={...cur,...fields,student_id:name};
     const ok=await sb.upsert('gestao',updated);
     if(ok){setGestao(p=>({...p,[name]:updated}));}
@@ -221,9 +239,9 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
     // Cria o aluno na tabela students (permite login no app)
     await sb.upsert('students',{id:novoAluno.nome.trim(),name:novoAluno.nome.trim()});
     // Salva os dados de gestão
-    await saveGestao(novoAluno.nome.trim(),{nasc:novoAluno.nasc,tel:novoAluno.tel,plano:novoAluno.plano,dia_venc:novoAluno.dia_venc,turmas:novoAluno.turmas,ativo:true,pago:false,faltas:{}});
+    await saveGestao(novoAluno.nome.trim(),{nasc:novoAluno.nasc,tel:novoAluno.tel,email:novoAluno.email||null,plano:novoAluno.plano,dia_venc:novoAluno.dia_venc,turmas:novoAluno.turmas,ativo:true,pago:false,faltas:{},inicio_contrato:novoAluno.inicio_contrato||null,fim_contrato:novoAluno.fim_contrato||null,valor_contrato:novoAluno.valor_contrato?parseFloat(novoAluno.valor_contrato):null});
     setShowNovoAluno(false);
-    setNovoAluno({nome:'',nasc:'',tel:'',plano:'3x',dia_venc:10,turmas:[]});
+    setNovoAluno({nome:'',nasc:'',tel:'',email:'',plano:'3x_mensal',dia_venc:10,turmas:[],inicio_contrato:'',fim_contrato:'',valor_contrato:''});
   };
   const salvarGestaoAluno=async(id,field,value)=>{
     await saveGestao(id,{[field]:value});
@@ -231,7 +249,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
 
   const abrirEdicao=(a)=>{
     setEditingAluno(a.id);
-    setEditForm({tel:a.tel,nasc:a.nasc,plano:a.plano,dia_venc:a.dia_venc,ativo:a.ativo,turmas:[...a.turmas]});
+    setEditForm({tel:a.tel,nasc:a.nasc,email:a.email,plano:a.plano,dia_venc:a.dia_venc,ativo:a.ativo,turmas:[...a.turmas],inicio_contrato:a.inicio_contrato,fim_contrato:a.fim_contrato,valor_contrato:a.valor_contrato||''});
     setSelAluno(a.id);
   };
   const toggleTurmaEdit=(key)=>{
@@ -250,30 +268,26 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
     setGestao(p=>{const n={...p};delete n[id];return n;});
     setConfirmDel(null);setSelAluno(null);setSaving(null);
   };
-  const salvarPlano=()=>{
-    if(!novoPlan.nome||!novoPlan.valor)return;
-    if(editPlan){setPlanos(p=>p.map(pl=>pl.id===editPlan?{...pl,...novoPlan}:pl));}
-    else{setPlanos(p=>[...p,{id:novoPlan.nome.replace(/\s/g,'-').toLowerCase(),nome:novoPlan.nome,valor:parseFloat(novoPlan.valor)}]);}
-    setShowNovoPlan(false);setEditPlan(null);setNovoPlan({nome:'',valor:''});
-  };
   const waLink=(a,msg)=>`https://wa.me/${a.tel}?text=${encodeURIComponent(msg)}`;
 
   // Derivados
   const turmaMap={};
   alunos.forEach(a=>(a.turmas||[]).forEach(t=>{if(!turmaMap[t])turmaMap[t]=[];turmaMap[t].push(a);}));
-  const ativos    =alunos.filter(a=>a.ativo);
-  const atrasados =ativos.filter(a=>!a.pago&&diffDays(getVencimento(a))<0);
-  const entradas  =lanc.filter(e=>e.tipo==='entrada').reduce((a,e)=>a+parseFloat(e.valor||0),0);
-  const saidas    =lanc.filter(e=>e.tipo==='saida').reduce((a,e)=>a+parseFloat(e.valor||0),0);
-  const potencial =ativos.reduce((a,al)=>a+getValor(al,planos),0);
-  const inadimp   =ativos.filter(a=>!a.pago).reduce((a,al)=>a+getValor(al,planos),0);
-  const ticket    =ativos.length?Math.round(potencial/ativos.length):0;
-  const custo     =ativos.length?Math.round(saidas/ativos.length):0;
-  const totalVagas=(DIAS.length*HORARIOS.length+1)*CAP;
-  const totalOcup =Object.values(turmaMap).reduce((a,v)=>a+v.filter(al=>al.ativo).length,0);
-  const ocup      =totalVagas?Math.round((totalOcup/totalVagas)*100):0;
-  const churnRisk =ativos.filter(a=>{const esp={'2x':8,'3x':12,'5x':20}[a.plano]||12;return Object.keys(a.faltas||{}).length>esp*0.5;});
-  const aniver    =alunos.filter(a=>a.nasc&&parseInt(a.nasc.split('-')[1])===TODAY.getMonth()+1);
+  const ativos       =alunos.filter(a=>a.ativo);
+  const atrasados    =ativos.filter(a=>!a.pago&&diffDays(getVencimento(a))<0);
+  const vencendoCont =ativos.filter(a=>a.fim_contrato&&diffDaysContrato(a)>=0&&diffDaysContrato(a)<=30);
+  const vencidosCont =ativos.filter(a=>a.fim_contrato&&diffDaysContrato(a)<0);
+  const entradas     =lanc.filter(e=>e.tipo==='entrada').reduce((a,e)=>a+parseFloat(e.valor||0),0);
+  const saidas       =lanc.filter(e=>e.tipo==='saida').reduce((a,e)=>a+parseFloat(e.valor||0),0);
+  const potencial    =ativos.reduce((a,al)=>a+getValorMensal(al),0);
+  const inadimp      =ativos.filter(a=>!a.pago).reduce((a,al)=>a+getValorMensal(al),0);
+  const ticket       =ativos.length?Math.round(potencial/ativos.length):0;
+  const custo        =ativos.length?Math.round(saidas/ativos.length):0;
+  const totalVagas   =(DIAS.length*HORARIOS.length+1)*CAP;
+  const totalOcup    =Object.values(turmaMap).reduce((a,v)=>a+v.filter(al=>al.ativo).length,0);
+  const ocup         =totalVagas?Math.round((totalOcup/totalVagas)*100):0;
+  const churnRisk    =ativos.filter(a=>{const base=a.plano?.split('_')[0];const esp={'2x':8,'3x':12,'ilimitado':20}[base]||12;return Object.keys(a.faltas||{}).length>esp*0.5;});
+  const aniver       =alunos.filter(a=>a.nasc&&parseInt(a.nasc.split('-')[1])===TODAY.getMonth()+1);
 
   const INSIGHTS=[
     {e:'💸',t:'Custo por aluno',d:`Despesas R$${saidas}/mês ÷ ${ativos.length} ativos = R$${custo}/aluno. Ticket médio R$${ticket}. Margem: R$${ticket-custo}/aluno/mês.`,c:INFO},
@@ -302,10 +316,20 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
         </div>
       </div>
 
-      {atrasados.length>0&&(
-        <div style={{background:'rgba(224,80,80,0.08)',border:`1px solid rgba(224,80,80,0.3)`,borderRadius:8,padding:'8px 12px',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontSize:11,color:DANGER,fontWeight:700}}>⚠️ {atrasados.length} pagamento{atrasados.length>1?'s':''} atrasado{atrasados.length>1?'s':''}</span>
-          <button style={{...s.btnS,fontSize:10,borderColor:DANGER,color:DANGER,padding:'3px 8px'}} onClick={()=>setTab(0)}>Ver</button>
+      {(atrasados.length>0||vencidosCont.length>0||vencendoCont.length>0)&&(
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+          {atrasados.length>0&&<div style={{background:'rgba(224,80,80,0.08)',border:`1px solid rgba(224,80,80,0.3)`,borderRadius:8,padding:'6px 12px',display:'flex',alignItems:'center',gap:8,flex:1,minWidth:160}}>
+            <span style={{fontSize:11,color:DANGER,fontWeight:700}}>⚠️ {atrasados.length} pag. atrasado{atrasados.length>1?'s':''}</span>
+            <button style={{...s.btnS,fontSize:10,borderColor:DANGER,color:DANGER,padding:'2px 7px'}} onClick={()=>setTab(0)}>Ver</button>
+          </div>}
+          {vencidosCont.length>0&&<div style={{background:'rgba(224,80,80,0.08)',border:`1px solid rgba(224,80,80,0.3)`,borderRadius:8,padding:'6px 12px',display:'flex',alignItems:'center',gap:8,flex:1,minWidth:160}}>
+            <span style={{fontSize:11,color:DANGER,fontWeight:700}}>📄 {vencidosCont.length} contrato{vencidosCont.length>1?'s':''} vencido{vencidosCont.length>1?'s':''}</span>
+            <button style={{...s.btnS,fontSize:10,borderColor:DANGER,color:DANGER,padding:'2px 7px'}} onClick={()=>setTab(0)}>Ver</button>
+          </div>}
+          {vencendoCont.length>0&&<div style={{background:'rgba(232,160,32,0.08)',border:`1px solid rgba(232,160,32,0.3)`,borderRadius:8,padding:'6px 12px',display:'flex',alignItems:'center',gap:8,flex:1,minWidth:160}}>
+            <span style={{fontSize:11,color:WARN,fontWeight:700}}>⏰ {vencendoCont.length} contrato{vencendoCont.length>1?'s':''} a vencer</span>
+            <button style={{...s.btnS,fontSize:10,borderColor:WARN,color:WARN,padding:'2px 7px'}} onClick={()=>setTab(0)}>Ver</button>
+          </div>}
         </div>
       )}
 
@@ -354,6 +378,32 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
           </div>
         </div>
 
+        {vencidosCont.length>0&&<div style={{...s.card,border:`1px solid rgba(224,80,80,0.3)`,marginBottom:8}}>
+          <div style={{...s.hd,color:DANGER}}>📄 CONTRATOS VENCIDOS ({vencidosCont.length})</div>
+          {vencidosCont.map(a=>(
+            <div key={a.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:`1px solid ${BDR}`,flexWrap:'wrap',gap:4}}>
+              <span style={{fontSize:12}}>{a.nome}</span>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <span style={{fontSize:10,color:DANGER}}>Venceu {Math.abs(diffDaysContrato(a))}d atrás</span>
+                {a.tel&&<button onClick={()=>window.open(waLink(a,`Olá ${a.nome.split(' ')[0]}! 👋 Seu contrato Pōkai venceu. Vamos renovar?`),'_blank')} style={{...s.btnS,borderColor:'#25D366',color:'#25D366',fontSize:10}}>📱 WA</button>}
+              </div>
+            </div>
+          ))}
+        </div>}
+
+        {vencendoCont.length>0&&<div style={{...s.card,border:`1px solid rgba(232,160,32,0.3)`,marginBottom:8}}>
+          <div style={{...s.hd,color:WARN}}>⏰ CONTRATOS A VENCER (30 dias)</div>
+          {vencendoCont.map(a=>(
+            <div key={a.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:`1px solid ${BDR}`,flexWrap:'wrap',gap:4}}>
+              <span style={{fontSize:12}}>{a.nome}</span>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <span style={{fontSize:10,color:WARN}}>Vence em {diffDaysContrato(a)}d · {a.fim_contrato}</span>
+                {a.tel&&<button onClick={()=>window.open(waLink(a,`Olá ${a.nome.split(' ')[0]}! 👋 Seu contrato Pōkai vence em ${diffDaysContrato(a)} dias. Quer renovar?`),'_blank')} style={{...s.btnS,borderColor:'#25D366',color:'#25D366',fontSize:10}}>📱 WA</button>}
+              </div>
+            </div>
+          ))}
+        </div>}
+
         {atrasados.length>0&&<div style={{...s.card,border:`1px solid rgba(224,80,80,0.3)`}}>
           <div style={{...s.hd,color:DANGER}}>⚠️ PAGAMENTOS ATRASADOS</div>
           {atrasados.map(a=>(
@@ -363,9 +413,9 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                 <span style={{fontSize:10,color:DANGER,marginLeft:6}}>{Math.abs(diffDays(getVencimento(a)))}d atraso</span>
               </div>
               <div style={{display:'flex',gap:5}}>
-                <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:DANGER}}>R${getValor(a,planos)}</span>
+                <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:DANGER}}>R${getValorMensal(a)}</span>
                 <button onClick={()=>setShowPix(a)} style={s.btnS}>💳 PIX</button>
-                {a.tel&&<button onClick={()=>window.open(waLink(a,`Olá ${a.nome.split(' ')[0]}! 👋 Sua mensalidade Pōkai de R$${getValor(a,planos)} está em atraso há ${Math.abs(diffDays(getVencimento(a)))} dias. Qualquer dúvida, estamos aqui!`),'_blank')} style={{...s.btnS,borderColor:'#25D366',color:'#25D366'}}>📱 WA</button>}
+                {a.tel&&<button onClick={()=>window.open(waLink(a,`Olá ${a.nome.split(' ')[0]}! 👋 Sua mensalidade Pōkai de R$${getValorMensal(a)} está em atraso há ${Math.abs(diffDays(getVencimento(a)))} dias. Qualquer dúvida, estamos aqui!`),'_blank')} style={{...s.btnS,borderColor:'#25D366',color:'#25D366'}}>📱 WA</button>}
                 <button onClick={()=>togglePago(a)} style={{...s.btnS,borderColor:ACC,color:ACC,fontSize:10}}>✅ Marcar pago</button>
               </div>
             </div>
@@ -414,12 +464,17 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
             </div>
             <div><label style={s.lbl}>Data de nascimento</label><input type="date" style={s.inp} value={novoAluno.nasc} onChange={e=>setNovoAluno(p=>({...p,nasc:e.target.value}))}/></div>
             <div><label style={s.lbl}>WhatsApp (55+DDD+número)</label><input style={s.inp} value={novoAluno.tel} onChange={e=>setNovoAluno(p=>({...p,tel:e.target.value}))} placeholder="5563999990000"/></div>
+            <div><label style={s.lbl}>E-mail</label><input style={s.inp} value={novoAluno.email} onChange={e=>setNovoAluno(p=>({...p,email:e.target.value}))} placeholder="aluno@email.com"/></div>
             <div><label style={s.lbl}>Dia vencimento (1–28)</label><input type="number" min="1" max="28" style={s.inp} value={novoAluno.dia_venc} onChange={e=>setNovoAluno(p=>({...p,dia_venc:parseInt(e.target.value)}))}/></div>
             <div><label style={s.lbl}>Plano</label>
               <select style={s.inp} value={novoAluno.plano} onChange={e=>setNovoAluno(p=>({...p,plano:e.target.value}))}>
-                {planos.map(p=><option key={p.id} value={p.id}>{p.nome} — R${p.valor}</option>)}
+                <option value="">Sem plano</option>
+                {planos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
               </select>
             </div>
+            <div><label style={s.lbl}>Valor total contrato (R$)</label><input type="number" style={s.inp} value={novoAluno.valor_contrato} onChange={e=>setNovoAluno(p=>({...p,valor_contrato:e.target.value}))} placeholder="Ex: 1560"/></div>
+            <div><label style={s.lbl}>Início contrato</label><input type="date" style={s.inp} value={novoAluno.inicio_contrato} onChange={e=>setNovoAluno(p=>({...p,inicio_contrato:e.target.value}))}/></div>
+            <div><label style={s.lbl}>Fim contrato</label><input type="date" style={s.inp} value={novoAluno.fim_contrato} onChange={e=>setNovoAluno(p=>({...p,fim_contrato:e.target.value}))}/></div>
           </div>
           <div style={{marginBottom:10}}>
             <label style={s.lbl}>Turmas fixas</label>
@@ -443,7 +498,8 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
         {alunos.map(a=>{
           const venc=getVencimento(a);
           const d=diffDays(venc);
-          const valor=getValor(a,planos);
+          const valor=getValorMensal(a);
+          const dCont=diffDaysContrato(a);
           const nFaltas=Object.keys(a.faltas||{}).length;
           const open=selAluno===a.id;
           const isEditing=editingAluno===a.id;
@@ -455,6 +511,11 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
             :d===0?<span style={s.tagW}>⏰ Vence hoje</span>
             :d<=7?<span style={s.tagW}>📅 {d}d</span>
             :<span style={s.tagI}>OK</span>;
+          const contStatus=a.fim_contrato
+            ?(dCont<0?<span style={s.tagD}>📄 Contrato vencido</span>
+              :dCont<=30?<span style={s.tagW}>📄 Contrato em {dCont}d</span>
+              :null)
+            :null;
           return(
             <div key={a.id} style={{...s.card,opacity:a.ativo?1:0.55,border:`1px solid ${isEditing?WARN:open?ACC:BDR}`}}>
 
@@ -463,8 +524,9 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                 <div>
                   <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:3,flexWrap:'wrap'}}>
                     <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16}}>{a.nome}</span>
-                    <span style={s.tagI}>{planos.find(p=>p.id===a.plano)?.nome||'sem plano'}</span>
+                    {a.plano&&<span style={s.tagI}>{planos.find(p=>p.id===a.plano)?.nome||a.plano}</span>}
                     {status}
+                    {contStatus}
                     {!a.ativo&&<span style={s.tagD}>inativo</span>}
                     {a.peso&&<span style={{fontSize:10,color:MUTED}}>{a.peso}kg</span>}
                   </div>
@@ -487,9 +549,14 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
                   <div>
                     <label style={s.lbl}>Plano</label>
-                    <select style={s.inp} value={editForm.plano||'3x'} onChange={e=>setEditForm(p=>({...p,plano:e.target.value}))}>
-                      {planos.map(p=><option key={p.id} value={p.id}>{p.nome} — R${p.valor}</option>)}
+                    <select style={s.inp} value={editForm.plano||''} onChange={e=>setEditForm(p=>({...p,plano:e.target.value}))}>
+                      <option value="">Sem plano</option>
+                      {planos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Valor total contrato (R$)</label>
+                    <input type="number" style={s.inp} value={editForm.valor_contrato||''} onChange={e=>setEditForm(p=>({...p,valor_contrato:e.target.value?parseFloat(e.target.value):''}))} placeholder="Ex: 1560"/>
                   </div>
                   <div>
                     <label style={s.lbl}>Dia vencimento (1–28)</label>
@@ -502,6 +569,18 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
                   <div>
                     <label style={s.lbl}>Data de nascimento</label>
                     <input type="date" style={s.inp} value={editForm.nasc||''} onChange={e=>setEditForm(p=>({...p,nasc:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>E-mail</label>
+                    <input style={s.inp} value={editForm.email||''} onChange={e=>setEditForm(p=>({...p,email:e.target.value}))} placeholder="aluno@email.com"/>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Início do contrato</label>
+                    <input type="date" style={s.inp} value={editForm.inicio_contrato||''} onChange={e=>setEditForm(p=>({...p,inicio_contrato:e.target.value||null}))}/>
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Fim do contrato</label>
+                    <input type="date" style={s.inp} value={editForm.fim_contrato||''} onChange={e=>setEditForm(p=>({...p,fim_contrato:e.target.value||null}))}/>
                   </div>
                   <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:8,background:SURF2,borderRadius:8,padding:'8px 12px'}}>
                     <span style={{fontSize:10,color:MUTED,flex:1}}>Status do aluno</span>
@@ -773,30 +852,31 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
       {/* ── CONFIG ── */}
       {tab===4&&<div>
         <div style={s.card}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-            <div style={s.hd}>PLANOS E VALORES</div>
-            <button style={s.btnP} onClick={()=>{setNovoPlan({nome:'',valor:''});setEditPlan(null);setShowNovoPlan(v=>!v);}}>+ Novo</button>
-          </div>
-          {showNovoPlan&&<div style={{background:SURF2,borderRadius:8,padding:'12px',marginBottom:12,border:`1px solid ${ACC}`}}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-              <div><label style={s.lbl}>Nome</label><input style={s.inp} value={novoPlan.nome} onChange={e=>setNovoPlan(p=>({...p,nome:e.target.value}))} placeholder="Ex: 4x na semana"/></div>
-              <div><label style={s.lbl}>Valor (R$)</label><input type="number" style={s.inp} value={novoPlan.valor} onChange={e=>setNovoPlan(p=>({...p,valor:e.target.value}))} placeholder="200"/></div>
-            </div>
-            <div style={{display:'flex',gap:7}}>
-              <button style={s.btnS} onClick={()=>{setShowNovoPlan(false);setEditPlan(null);}}>Cancelar</button>
-              <button style={s.btnP} onClick={salvarPlano}>💾 {editPlan?'Atualizar':'Criar'}</button>
-            </div>
-          </div>}
+          <div style={{...s.hd,marginBottom:8}}>PLANOS DISPONÍVEIS</div>
+          <p style={{fontSize:11,color:MUTED,marginBottom:10}}>Valores são definidos por aluno (campo "Valor total contrato"). O valor mensal é calculado automaticamente pelo período do plano.</p>
           {planos.map(p=>(
-            <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:`1px solid ${BDR}`}}>
-              <span style={{fontSize:13,fontWeight:600}}>{p.nome}</span>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:ACC}}>R${p.valor}</span>
-                <button style={s.btnS} onClick={()=>{setNovoPlan({nome:p.nome,valor:p.valor});setEditPlan(p.id);setShowNovoPlan(true);}}>✏️</button>
-                <button style={s.btnD} onClick={()=>setPlanos(prev=>prev.filter(pl=>pl.id!==p.id))}>🗑</button>
-              </div>
+            <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:`1px solid ${BDR}`}}>
+              <span style={{fontSize:12}}>{p.nome}</span>
+              <span style={{fontSize:10,color:MUTED,fontFamily:"'JetBrains Mono',monospace"}}>{p.id}</span>
             </div>
           ))}
+        </div>
+
+        <div style={s.card}>
+          <div style={{...s.hd,color:INFO,marginBottom:6}}>🗄️ SQL — MIGRAÇÃO DO BANCO</div>
+          <p style={{fontSize:11,color:MUTED,marginBottom:8,lineHeight:1.6}}>Execute no <strong style={{color:INFO}}>Supabase → SQL Editor</strong> para adicionar as colunas de contrato à tabela existente:</p>
+          <div style={{background:BG,borderRadius:8,padding:'10px 12px',fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'#aaa',lineHeight:1.8,marginBottom:8,overflow:'auto',whiteSpace:'pre'}}>
+{`-- Adicionar colunas de contrato (seguro reexecutar):
+alter table gestao add column if not exists email text;
+alter table gestao add column if not exists inicio_contrato text;
+alter table gestao add column if not exists fim_contrato text;
+alter table gestao add column if not exists valor_contrato numeric;
+alter table gestao add column if not exists codigo_externo text;`}
+          </div>
+          <button style={{...s.btnS,fontSize:10}} onClick={()=>{
+            navigator.clipboard?.writeText(`alter table gestao add column if not exists email text;\nalter table gestao add column if not exists inicio_contrato text;\nalter table gestao add column if not exists fim_contrato text;\nalter table gestao add column if not exists valor_contrato numeric;\nalter table gestao add column if not exists codigo_externo text;`);
+            alert('SQL copiado!');
+          }}>📋 Copiar SQL</button>
         </div>
 
         <div style={s.card}>
@@ -831,7 +911,7 @@ export default function ProfessorDashboard({allStudents=[],studProfiles={}}){
 
       {/* Modal PIX */}
       {showPix&&(()=>{
-        const valor=getValor(showPix,planos);
+        const valor=getValorMensal(showPix);
         const pix=gerarPix(pixChave,valor,pixBenef);
         return(
           <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowPix(null)}>
