@@ -19,6 +19,7 @@ const askConfirm=(msg)=>new Promise(r=>{if(_setConfirm)_setConfirm({msg,resolve:
 
 const sb={
   async get(t,q=''){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok){showToast('Erro ao buscar dados','error');return null;}return r.json();}catch{showToast('Sem conexão com servidor','error');return null;}},
+  async getQuiet(t,q=''){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{headers:HDR});if(!r.ok)return null;return r.json();}catch{return null;}},
   async upsert(t,d){try{const r=await fetch(`${SB_URL}/rest/v1/${t}`,{method:'POST',headers:{...HDR,'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(d)});if(!r.ok){showToast('Erro ao salvar','error');return null;}return r.json();}catch{showToast('Sem conexão com servidor','error');return null;}},
   async del(t,q){try{const r=await fetch(`${SB_URL}/rest/v1/${t}?${q}`,{method:'DELETE',headers:HDR});if(!r.ok)showToast('Erro ao excluir','error');return r.ok;}catch{showToast('Sem conexão com servidor','error');return false;}},
 };
@@ -54,6 +55,23 @@ const VL={forca:'Força',volume:'Volume',consistencia:'Consistência',intensidad
 const vc=v=>v>=80?ACC:v>=60?WARN:DANGER;
 const EMPTY_SET={reps:'',load:'',completed:true,notes:''};
 const EMPTY_EX={name:'',plannedSets:3,plannedReps:'',plannedLoad:'',cues:''};
+
+// ── Nomes de sessão legíveis ────────────────────────────────────────────────
+const WD=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const MUSCLE_EMOJI=[[/(peito|supino|tr[ií]ceps|push|dip|paralela)/i,'🎯'],[/(costas|puxada|remada|b[íi]ceps|pull|barra)/i,'🔙'],[/(perna|agach|leg|gl[úu]teo|quadr|panturr|avanç|afundo)/i,'🦵'],[/(ombro|desenvolv|militar|elevaç)/i,'🏔️'],[/(core|abd|prancha|canivete|hollow)/i,'🧱'],[/(cardio|corrida|hiit|circuito|burpee|metcon|amrap)/i,'🔥'],[/(full|geral|completo|viagem)/i,'⚡']];
+const muscleEmoji=n=>{for(const[re,e]of MUSCLE_EMOJI)if(re.test(n||''))return e;return'🏋️';};
+const fmtSessDate=d=>{if(!d)return{dw:'',dm:''};const dt=new Date(d+'T12:00:00');return{dw:WD[dt.getDay()],dm:`${dt.getDate()} ${MONTHS[dt.getMonth()].slice(0,3).toLowerCase()}`};};
+// título limpo: tira "Treino A —" / "Treino B:" do começo, sobra o foco muscular
+const cleanSessName=n=>{if(!n)return'Treino';const c=n.replace(/^\s*treino\s+[a-z0-9]+\s*[—\-:·]\s*/i,'').trim();return c||n;};
+
+// ── Percepção de esforço (PSE 0–10) ─────────────────────────────────────────
+const PSE_FACES=[['😴','Muito leve'],['😴','Muito leve'],['🙂','Leve'],['🙂','Leve'],['😐','Moderado'],['😐','Moderado'],['😮‍💨','Puxado'],['😮‍💨','Puxado'],['😣','Muito puxado'],['😣','Muito puxado'],['🥵','Máximo']];
+
+// ── Testes físicos (dados vêm pré-calculados; app só exibe) ──────────────────
+const TEST_PROVAS={banco_wells:['Banco de Wells','cm'],alcance_ombro:['Alcance de Ombro','cm'],agachamento:['Agachamento 5RM','kg'],paralela:['Paralela / Dip 5RM','kg'],barra_fixa:['Barra Fixa 5RM','kg'],flexao:['Flexão de Braços','reps'],burpee:['Burpee','reps'],canivete:['Canivete (V-up)','reps'],circuito:['Circuito 10min','']};
+const TEST_FASES=[['Flexibilidade',['banco_wells','alcance_ombro']],['Força',['agachamento','paralela','barra_fixa']],['Resistência',['flexao','burpee','canivete']],['Circuito',['circuito']]];
+const fmtProva=(id,v)=>{if(v==null||v==='')return'—';if(id==='circuito'){const r=Math.floor(v/44),e=v%44;return`${r} rounds${e?` +${e}`:''}`;}if(id==='paralela'||id==='barra_fixa'){if(v===0)return'corpo';if(v>0)return`+${v}kg`;return`elástico ${v}kg`;}return`${v} ${TEST_PROVAS[id]?.[1]||''}`.trim();};
+const faseColor=v=>v>=70?ACC:v>=40?WARN:DANGER;
 
 const st={
   app:{fontFamily:"'Outfit',sans-serif",background:BG,color:TEXT,minHeight:'100vh'},
@@ -141,7 +159,7 @@ function TopNav({items,active,setActive,rightSlot}){
   const conRef=useRef(null);
   const btnRefs=useRef([]);
   const[ind,setInd]=useState({width:0,left:0});
-  const compact=items.length>=5;
+  const compact=items.length>=4;
   useEffect(()=>{
     const update=()=>{
       const btn=btnRefs.current[active];const con=conRef.current;
@@ -153,6 +171,7 @@ function TopNav({items,active,setActive,rightSlot}){
   },[active,items]);
   return(
     <div style={{position:'fixed',top:0,left:0,right:0,zIndex:100,padding:'12px 18px 0',background:`linear-gradient(to bottom, ${BG} 75%, transparent)`}}>
+      <div style={{maxWidth:720,margin:'0 auto'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
         <span style={{fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:3,color:ACC}}>
           PŌKAI <span style={{color:TEXT,fontWeight:300,fontSize:13,letterSpacing:4}}>MOVEMENT</span>
@@ -171,6 +190,7 @@ function TopNav({items,active,setActive,rightSlot}){
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );
@@ -504,63 +524,76 @@ function FeedView({posts,author,isCoach,newText,setNewText,onPost,posting,onLike
 
 // ── LogForm ───────────────────────────────────────────────────────────────────
 function LogForm({logData,setLogData,onSave,onCancel,loading}){
+  const[adv,setAdv]=useState(false);
   const updSet=(ei,si,f,v)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.map((s,j)=>j===si?{...s,[f]:v}:s)}:e)}));
   const addSet=ei=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:[...e.sets,{...EMPTY_SET,reps:e.planned?.reps||''}]}:e)}));
   const remSet=(ei,si)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,sets:e.sets.filter((_,j)=>j!==si)}:e)}));
+  const updExName=(ei,v)=>setLogData(p=>({...p,exercises:p.exercises.map((e,i)=>i===ei?{...e,name:v}:e)}));
+  const set=(f,v)=>setLogData(p=>({...p,[f]:v}));
+  const rpe=logData.rpe??7;const face=PSE_FACES[rpe]||PSE_FACES[7];
   return(
     <div>
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:18}}>
         <button style={st.btnG} onClick={onCancel}>← Voltar</button>
         <div>
-          <h2 style={{fontFamily:"'Bebas Neue'",fontSize:26,letterSpacing:2,color:ACC,margin:0}}>{logData.templateName}</h2>
+          <h2 style={{fontFamily:"'Bebas Neue'",fontSize:26,letterSpacing:2,color:ACC,margin:0}}>{cleanSessName(logData.templateName)}</h2>
           <span style={{fontSize:12,color:MUTED}}>📅 {logData.date}</span>
         </div>
       </div>
-      {logData.exercises.map((ex,ei)=>(
-        <div key={ei} style={st.sect}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
-            <div>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:17,marginBottom:5}}>{ex.name}</div>
-              <div style={{fontSize:11,color:MUTED,background:SURF2,padding:'3px 9px',borderRadius:4,display:'inline-flex',gap:6}}>
-                📋 <span style={{color:ACC,fontFamily:"'JetBrains Mono',monospace"}}>{ex.planned?.sets}x{ex.planned?.reps}{ex.planned?.load?' @ '+ex.planned.load:''}</span>
-              </div>
-              {ex.cues&&<div style={{fontSize:11,color:MUTED,marginTop:5}}>💡 {ex.cues}</div>}
-            </div>
-            <span style={{fontSize:11,color:MUTED}}>{ex.sets.filter(s=>s.completed).length}/{ex.sets.length}</span>
-          </div>
-          <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:340}}>
-              <thead><tr>{['#','Reps','Carga','✓','Obs',''].map(h=><th key={h} style={st.th}>{h}</th>)}</tr></thead>
-              <tbody>
-                {ex.sets.map((set,si)=>(
-                  <tr key={si} style={{opacity:set.completed?1:0.55}}>
-                    <td style={{...st.td,color:MUTED,fontSize:12,fontWeight:700}}>{si+1}</td>
-                    <td style={st.td}><input type="number" placeholder={ex.planned?.reps||'0'} min="0" style={{...st.inp,padding:'4px 7px',width:66,fontSize:13,textAlign:'center',borderColor:set.reps?ACC:undefined}} value={set.reps} onChange={e=>updSet(ei,si,'reps',e.target.value)}/></td>
-                    <td style={st.td}><input type="number" placeholder="0" min="0" step="0.5" style={{...st.inp,padding:'4px 7px',width:74,fontSize:13,textAlign:'center',borderColor:set.load?ACC:undefined}} value={set.load} onChange={e=>updSet(ei,si,'load',e.target.value)}/></td>
-                    <td style={{...st.td,textAlign:'center'}}><div onClick={()=>updSet(ei,si,'completed',!set.completed)} style={{width:22,height:22,borderRadius:4,cursor:'pointer',margin:'0 auto',border:`2px solid ${set.completed?ACC:'#444'}`,background:set.completed?ACC:'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#000'}}>{set.completed?'✓':''}</div></td>
-                    <td style={st.td}><input placeholder="dor, obs..." style={{...st.inp,padding:'4px 7px',width:118,fontSize:12}} value={set.notes} onChange={e=>updSet(ei,si,'notes',e.target.value)}/></td>
-                    <td style={st.td}>{ex.sets.length>1&&<button style={{background:'none',border:'none',color:DANGER,cursor:'pointer',fontSize:13}} onClick={()=>remSet(ei,si)}>✕</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button style={{...st.btnS,fontSize:12,padding:'4px 11px',marginTop:8}} onClick={()=>addSet(ei)}>+ Série extra</button>
-        </div>
-      ))}
+
+      {/* Confirmação simplificada */}
       <div style={st.sect}>
-        <span style={st.sectT}>AVALIAÇÃO</span>
-        <div style={st.g2}>
-          <F label={`RPE ${logData.rpe}/10`}><input type="range" min="1" max="10" value={logData.rpe} onChange={e=>setLogData(p=>({...p,rpe:Number(e.target.value)}))} style={{width:'100%',accentColor:ACC,marginTop:8}}/></F>
-          <F label="Energia"><Sel value={logData.energy} onChange={e=>setLogData(p=>({...p,energy:e.target.value}))} opts={['baixa','média','alta']}/></F>
+        <span style={st.sectT}>COMO FOI O TREINO?</span>
+        <label style={st.lbl}>PSE — Percepção de esforço · <span style={{color:ACC}}>{rpe}/10</span></label>
+        <div style={{fontSize:52,textAlign:'center',lineHeight:1,margin:'6px 0 2px'}}>{face[0]}</div>
+        <div style={{textAlign:'center',fontSize:13,color:MUTED,marginBottom:10}}>{face[1]}</div>
+        <input type="range" min="0" max="10" value={rpe} onChange={e=>set('rpe',Number(e.target.value))} style={{width:'100%',accentColor:ACC}}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginTop:16}}>
+          <F label="FC média"><input type="number" style={st.inp} value={logData.fc_media} onChange={e=>set('fc_media',e.target.value)} placeholder="132"/></F>
+          <F label="FC máxima"><input type="number" style={st.inp} value={logData.fc_maxima} onChange={e=>set('fc_maxima',e.target.value)} placeholder="168"/></F>
+          <F label="Calorias"><input type="number" style={st.inp} value={logData.calorias} onChange={e=>set('calorias',e.target.value)} placeholder="420"/></F>
         </div>
-        <F label="Destaques ✨"><Inp value={logData.highlights} onChange={e=>setLogData(p=>({...p,highlights:e.target.value}))} placeholder="Ex: bati PR..."/></F>
-        <F label="Obs / Dores"><textarea style={{...st.inp,minHeight:60,resize:'vertical'}} value={logData.notes} onChange={e=>setLogData(p=>({...p,notes:e.target.value}))} placeholder="Dores, dificuldades..."/></F>
+        <F label="Notas do treino"><textarea style={{...st.inp,minHeight:52,resize:'vertical'}} value={logData.notes} onChange={e=>set('notes',e.target.value)} placeholder="Como se sentiu, destaques..."/></F>
+        <F label="Sentiu alguma dor? Onde?"><textarea style={{...st.inp,minHeight:52,resize:'vertical'}} value={logData.dor} onChange={e=>set('dor',e.target.value)} placeholder="Ex: leve incômodo no ombro direito..."/></F>
       </div>
-      <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginBottom:24}}>
-        <button style={st.btnS} onClick={onCancel}>Cancelar</button>
-        <button style={st.btnP} onClick={onSave} disabled={loading}>{loading?'SALVANDO...':'💾 SALVAR TREINO'}</button>
-      </div>
+
+      <button style={{...st.btnP,width:'100%',padding:'13px',fontSize:15}} onClick={onSave} disabled={loading}>{loading?'SALVANDO...':'✅ CONFIRMAR TREINO'}</button>
+      <button style={{...st.btnS,width:'100%',marginTop:8}} onClick={()=>setAdv(v=>!v)}>⚙️ Dados avançados {adv?'▴':'▾'}</button>
+
+      {adv&&<div style={{marginTop:12}}>
+        <F label="Energia"><Sel value={logData.energy} onChange={e=>set('energy',e.target.value)} opts={['baixa','média','alta']}/></F>
+        <F label="Destaques ✨"><Inp value={logData.highlights} onChange={e=>set('highlights',e.target.value)} placeholder="Ex: bati PR..."/></F>
+        {logData.exercises.map((ex,ei)=>(
+          <div key={ei} style={st.sect}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <input value={ex.name} onChange={e=>updExName(ei,e.target.value)} style={{...st.inp,fontWeight:700}} placeholder="Nome do exercício"/>
+            </div>
+            <div style={{fontSize:11,color:MUTED,background:SURF2,padding:'3px 9px',borderRadius:4,display:'inline-flex',gap:6,marginBottom:8}}>
+              📋 <span style={{color:ACC,fontFamily:"'JetBrains Mono',monospace"}}>{ex.planned?.sets}x{ex.planned?.reps}{ex.planned?.load?' @ '+ex.planned.load:''}</span>
+            </div>
+            {ex.cues&&<div style={{fontSize:11,color:MUTED,marginBottom:8}}>💡 {ex.cues}</div>}
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',minWidth:340}}>
+                <thead><tr>{['#','Reps','Carga','✓','Obs',''].map(h=><th key={h} style={st.th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {ex.sets.map((s2,si)=>(
+                    <tr key={si} style={{opacity:s2.completed?1:0.55}}>
+                      <td style={{...st.td,color:MUTED,fontSize:12,fontWeight:700}}>{si+1}</td>
+                      <td style={st.td}><input type="number" placeholder={ex.planned?.reps||'0'} min="0" style={{...st.inp,padding:'4px 7px',width:66,fontSize:13,textAlign:'center',borderColor:s2.reps?ACC:undefined}} value={s2.reps} onChange={e=>updSet(ei,si,'reps',e.target.value)}/></td>
+                      <td style={st.td}><input type="number" placeholder="0" min="0" step="0.5" style={{...st.inp,padding:'4px 7px',width:74,fontSize:13,textAlign:'center',borderColor:s2.load?ACC:undefined}} value={s2.load} onChange={e=>updSet(ei,si,'load',e.target.value)}/></td>
+                      <td style={{...st.td,textAlign:'center'}}><div onClick={()=>updSet(ei,si,'completed',!s2.completed)} style={{width:22,height:22,borderRadius:4,cursor:'pointer',margin:'0 auto',border:`2px solid ${s2.completed?ACC:'#444'}`,background:s2.completed?ACC:'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,color:'#000'}}>{s2.completed?'✓':''}</div></td>
+                      <td style={st.td}><input placeholder="obs..." style={{...st.inp,padding:'4px 7px',width:118,fontSize:12}} value={s2.notes} onChange={e=>updSet(ei,si,'notes',e.target.value)}/></td>
+                      <td style={st.td}>{ex.sets.length>1&&<button style={{background:'none',border:'none',color:DANGER,cursor:'pointer',fontSize:13}} onClick={()=>remSet(ei,si)}>✕</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button style={{...st.btnS,fontSize:12,padding:'4px 11px',marginTop:8}} onClick={()=>addSet(ei)}>+ Série extra</button>
+          </div>
+        ))}
+      </div>}
+      <div style={{height:24}}/>
     </div>
   );
 }
@@ -620,7 +653,7 @@ function TemplateForm({tpl,onSave,onCancel}){
 
 // ── ProfileSetup ─────────────────────────────────────────────────────────────
 function ProfileSetup({name,onSave,loading}){
-  const[form,setForm]=useState({age:'',height:'',weight:'',body_fat:''});
+  const[form,setForm]=useState({age:'',height:'',weight:'',body_fat:'',genero:''});
   const[errs,setErrs]=useState({});
   const upd=(f,v)=>{setForm(p=>({...p,[f]:v}));setErrs(p=>({...p,[f]:null}));};
   const save=()=>{
@@ -628,7 +661,7 @@ function ProfileSetup({name,onSave,loading}){
     if(!form.age)e.age='Obrigatório';
     if(!form.height)e.height='Obrigatório';
     if(Object.keys(e).length){setErrs(e);showToast('Preencha os campos obrigatórios','error');return;}
-    onSave({age:parseInt(form.age),height:parseFloat(form.height),weight:form.weight?parseFloat(form.weight):null,body_fat:form.body_fat?parseFloat(form.body_fat):null});
+    onSave({age:parseInt(form.age),height:parseFloat(form.height),weight:form.weight?parseFloat(form.weight):null,body_fat:form.body_fat?parseFloat(form.body_fat):null,genero:form.genero||null});
   };
   const Req=()=><span style={{color:DANGER,marginLeft:2}}>*</span>;
   const Err=({k})=>errs[k]?<span style={{color:DANGER,fontSize:10,marginTop:2,display:'block'}}>{errs[k]}</span>:null;
@@ -646,6 +679,11 @@ function ProfileSetup({name,onSave,loading}){
           <div style={st.fld}><label style={st.lbl}>Altura (cm)<Req/></label><input type="number" placeholder="175" style={{...st.inp,borderColor:errs.height?DANGER:undefined}} value={form.height} onChange={e=>upd('height',e.target.value)}/><Err k="height"/></div>
           <div style={st.fld}><label style={st.lbl}>Peso (kg)</label><input type="number" step="0.1" placeholder="75.5" style={st.inp} value={form.weight} onChange={e=>upd('weight',e.target.value)}/></div>
           <div style={st.fld}><label style={st.lbl}>% Gordura</label><input type="number" step="0.1" placeholder="18.5" style={st.inp} value={form.body_fat} onChange={e=>upd('body_fat',e.target.value)}/></div>
+          <div style={st.fld}><label style={st.lbl}>Gênero</label>
+            <select style={st.inp} value={form.genero} onChange={e=>upd('genero',e.target.value)}>
+              <option value="">—</option><option value="M">Masculino</option><option value="F">Feminino</option>
+            </select>
+          </div>
         </div>
       </div>
       <button style={{...st.btnP,width:'100%',padding:'13px',fontSize:15}} onClick={save} disabled={loading}>
@@ -655,9 +693,55 @@ function ProfileSetup({name,onSave,loading}){
   );
 }
 
+// ── TestDetail (detalhe de um teste físico) ─────────────────────────────────
+function TestDetail({test,onBack,total}){
+  const medals=['🥇','🥈','🥉'];
+  const pmap={};(test.provas||[]).forEach(p=>{pmap[p.id]=p;});
+  return(
+    <div>
+      <button style={{...st.btnG,color:ACC,fontWeight:700,padding:0,marginBottom:12}} onClick={onBack}>← Voltar aos testes</button>
+      <div style={{display:'flex',alignItems:'center',gap:16,background:'linear-gradient(135deg,rgba(10,26,0,0.9),rgba(18,36,0,0.7))',border:`2px solid ${ACC}`,borderRadius:14,padding:'16px 18px',marginBottom:14}}>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:44,color:ACC,lineHeight:0.9}}>{test.pontuacao_geral!=null?test.pontuacao_geral:'—'}</div>
+          <div style={{fontSize:9,color:MUTED,letterSpacing:2}}>SCORE GERAL</div>
+        </div>
+        <div style={{flex:1}}>
+          {test.posicao&&<div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:'#FFD700'}}>{medals[test.posicao-1]||''} {test.posicao}º lugar</div>}
+          <div style={{fontSize:11,color:MUTED,marginTop:4}}>Teste Pōkai · {test.date}{total?` · ${total} avaliados`:''}</div>
+        </div>
+      </div>
+      {TEST_FASES.map(([fase,ids])=>{
+        const sc=test.fases?.[fase];const c=sc!=null?faseColor(sc):MUTED;
+        return(
+          <div key={fase} style={{marginBottom:14}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
+              <span style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:1,color:c}}>{fase}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:c}}>{sc!=null?`${Math.round(sc)}/100`:'—'}</span>
+            </div>
+            <div style={{height:5,background:'rgba(255,255,255,0.08)',borderRadius:3,overflow:'hidden',marginBottom:8}}><div style={{width:`${sc||0}%`,height:'100%',background:c,borderRadius:3}}/></div>
+            {ids.map(id=>{const p=pmap[id];if(!p)return null;return(
+              <div key={id} style={{padding:'8px 0',borderBottom:`1px solid ${BDR}`}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}>
+                  <span style={{fontSize:13,fontWeight:600}}>{TEST_PROVAS[id]?.[0]||id}</span>
+                  <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:ACC,whiteSpace:'nowrap'}}>{fmtProva(id,p.valor)}</span>
+                </div>
+                {p.feedback&&<div style={{fontSize:11,color:MUTED,marginTop:3,lineHeight:1.45}}>{p.feedback}</div>}
+              </div>
+            );})}
+          </div>
+        );
+      })}
+      {test.feedback_geral&&<div style={{background:'rgba(91,200,245,0.06)',border:`1px solid rgba(91,200,245,0.2)`,borderRadius:10,padding:'13px 15px',marginTop:4}}>
+        <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:INFO,textTransform:'uppercase',marginBottom:6}}>💬 Feedback do professor</div>
+        <p style={{fontSize:12,lineHeight:1.55,color:'#cfcfca',margin:0}}>{test.feedback_geral}</p>
+      </div>}
+    </div>
+  );
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App(){
-  const[view,setView]=useState(()=>localStorage.getItem('pokai_student')?'calendar':'login');
+  const[view,setView]=useState(()=>localStorage.getItem('pokai_student')?'dash':'login');
   const[student,setStudent]=useState(()=>localStorage.getItem('pokai_student')||'');
   const[profile,setProfile]=useState(null);
   const[nameInput,setNameInput]=useState('');
@@ -667,6 +751,13 @@ export default function App(){
   const[loading,setLoading]=useState(false);
   const[logs,setLogs]=useState([]);
   const[weightLogs,setWeightLogs]=useState([]);
+  const[allTests,setAllTests]=useState([]);
+  const[genderMap,setGenderMap]=useState({});
+  const[showLvlFull,setShowLvlFull]=useState(false);
+  const[rankGender,setRankGender]=useState('all');
+  const[openTestId,setOpenTestId]=useState(null);
+  const[weekExpanded,setWeekExpanded]=useState(false);
+  const[tplSearch,setTplSearch]=useState('');
   const[templates,setTemplates]=useState([]);
   const[studentTab,setStudentTab]=useState(0);
   const[calSelDate,setCalSelDate]=useState(todayStr());
@@ -700,7 +791,7 @@ export default function App(){
     _setConfirm=(data)=>setConfirmState(data);
   },[]);
   useEffect(()=>{loadTemplates();},[]);
-  useEffect(()=>{if(student){loadLogs(student);loadProfile(student);loadWeightLogs(student);}},[student]);
+  useEffect(()=>{if(student){loadLogs(student);loadProfile(student);loadWeightLogs(student);loadTests();}},[student]);
   useEffect(()=>{if(view==='mural')loadFeed();},[view]);
   useEffect(()=>{if(view==='coach'&&coachTab===4)loadFeed();},[coachTab]);
 
@@ -717,6 +808,11 @@ export default function App(){
     if(d?.[0]){setProfile(d[0]);if(!d[0]?.age||!d[0]?.height)setView(v=>v==='login'?v:'profile-setup');}
   };
   const loadWeightLogs=async(n)=>{const d=await sb.get('weight_logs',`student_id=eq.${encodeURIComponent(n)}&order=date.asc`);setWeightLogs(d||[]);};
+  const loadTests=async()=>{
+    const t=await sb.getQuiet('testes','order=date.desc');setAllTests(t||[]);
+    const s=await sb.getQuiet('students','order=name.asc');
+    const g={};(s||[]).forEach(x=>{if(x.genero)g[x.name]=x.genero;});setGenderMap(g);
+  };
   const loadCoach=async()=>{
     setLoading(true);await loadTemplates();
     const students=await sb.get('students','order=name.asc')||[];
@@ -763,13 +859,13 @@ export default function App(){
     setStudent(name);
     const d=await sb.get('students',`id=eq.${encodeURIComponent(name)}`);
     const p=d?.[0];setProfile(p);setLoading(false);
-    if(!p?.age||!p?.height){setView('profile-setup');}else{setView('calendar');}
+    if(!p?.age||!p?.height){setView('profile-setup');}else{setView('dash');}
   };
   const enterCoach=async()=>{
     if(coachPass===COACH_PWD){await loadCoach();setView('coach');}
     else showToast('Senha incorreta','error');
   };
-  const saveProfile=async(data)=>{setLoading(true);await sb.upsert('students',{id:student,name:student,...data});await loadProfile(student);setView('calendar');setLoading(false);};
+  const saveProfile=async(data)=>{setLoading(true);await sb.upsert('students',{id:student,name:student,...data});await loadProfile(student);setView('dash');setLoading(false);};
   const addWeightLog=async()=>{
     if(!newWeight)return;setLoading(true);
     await sb.upsert('weight_logs',{id:crypto.randomUUID(),student_id:student,date:todayStr(),weight:parseFloat(newWeight),body_fat:newBF?parseFloat(newBF):null});
@@ -782,12 +878,13 @@ export default function App(){
       exercises:tpl.exercises.map(ex=>({name:ex.name,cues:ex.cues,planned:{sets:ex.plannedSets,reps:ex.plannedReps,load:ex.plannedLoad},
         // Pré-preenche reps do planejado; load fica vazio para o aluno preencher
         sets:Array.from({length:ex.plannedSets||3},()=>({...EMPTY_SET,reps:ex.plannedReps||''}))})),
-      rpe:7,energy:'média',highlights:'',notes:''});
+      rpe:7,energy:'média',highlights:'',notes:'',fc_media:'',fc_maxima:'',calorias:'',dor:''});
     setCalPanel(null);setView('newlog');
   };
   const editLog=(log)=>{
     setLogData({id:log.id,date:log.date,week:log.week||'',templateId:log.template_id,templateName:log.template_name,
-      exercises:log.exercises||[],rpe:log.rpe||7,energy:log.energy||'média',highlights:log.highlights||'',notes:log.notes||''});
+      exercises:log.exercises||[],rpe:log.rpe||7,energy:log.energy||'média',highlights:log.highlights||'',notes:log.notes||'',
+      fc_media:log.fc_media||'',fc_maxima:log.fc_maxima||'',calorias:log.calorias||'',dor:log.dor||''});
     setCalPanel(null);setView('newlog');
   };
   const deleteLog=async(id)=>{
@@ -798,7 +895,8 @@ export default function App(){
   const saveLog=async()=>{
     if(!logData)return;setLoading(true);
     const id=logData.id||crypto.randomUUID();
-    await sb.upsert('logs',{id,student_id:student,date:logData.date,week:logData.week,template_id:logData.templateId,template_name:logData.templateName,exercises:logData.exercises,rpe:logData.rpe,energy:logData.energy,highlights:logData.highlights,notes:logData.notes});
+    const num=v=>v===''||v==null?null:parseFloat(v);
+    await sb.upsert('logs',{id,student_id:student,date:logData.date,week:logData.week,template_id:logData.templateId,template_name:logData.templateName,exercises:logData.exercises,rpe:logData.rpe,energy:logData.energy,highlights:logData.highlights,notes:logData.notes,fc_media:num(logData.fc_media),fc_maxima:num(logData.fc_maxima),calorias:num(logData.calorias),dor:logData.dor||null});
     const updated=await loadLogs(student,true);
     const saved=updated.find(l=>l.id===id);
     if(saved){setCalSelDate(logData.date);setCalPanel('log');setLogData(saved);}
@@ -811,7 +909,7 @@ export default function App(){
       const log=logMap[dateKey];const tpl=tplByDate[dateKey];
       if(log){setCalPanel('log');setLogData(log);}
       else if(tpl){setCalPanel('tpl');}
-      else{setCalPanel('picker');}
+      else{setCalPanel('empty');}
     } else if(calSelDate===dateKey){
       setCalSelDate(null);setCalPanel(null);
     } else {
@@ -819,7 +917,7 @@ export default function App(){
       const log=logMap[dateKey];const tpl=tplByDate[dateKey];
       if(log){setCalPanel('log');setLogData(log);}
       else if(tpl){setCalPanel('tpl');}
-      else{setCalPanel('picker');}
+      else{setCalPanel('empty');}
     }
   };
 
@@ -859,8 +957,17 @@ export default function App(){
   const radarData=Object.entries(valencias).map(([k,v])=>({attr:VL[k],value:v,fullMark:100}));
   const imc=profile?.weight&&profile?.height?((profile.weight)/((profile.height/100)**2)).toFixed(1):null;
   const weeklyRepsData=useMemo(()=>{const w={};logs.forEach(l=>{if(l.week)w[l.week]=(w[l.week]||0)+totalReps(l);});return Object.entries(w).slice(-6).map(([week,reps])=>({week,reps}));},[logs]);
+  // ── Testes do aluno logado (mais recente primeiro) ──
+  const myTests=useMemo(()=>allTests.filter(t=>t.student_id===student),[allTests,student]);
+  // ── Ranking: teste mais recente de cada aluno (allTests já vem date.desc) ──
+  const ranking=useMemo(()=>{
+    const latest={};
+    allTests.forEach(t=>{if(!latest[t.student_id])latest[t.student_id]=t;});
+    return Object.values(latest).map(t=>({name:t.student_id,genero:genderMap[t.student_id]||t.genero||null,score:t.pontuacao_geral,fases:t.fases||{}}));
+  },[allTests,genderMap]);
+  const myGender=genderMap[student]||profile?.genero||null;
 
-  const STUDENT_TABS=[{icon:Home,label:'Dashboard'},{icon:Calendar,label:'Treinos'},{icon:BarChart2,label:'Progresso'},{icon:User,label:'Perfil'},{icon:MessageSquare,label:'Mural'}];
+  const STUDENT_TABS=[{icon:Home,label:'Início'},{icon:Calendar,label:'Treinos'},{icon:BarChart2,label:'Progresso'},{icon:MessageSquare,label:'Mural'}];
   const COACH_TABS=[{icon:Calendar,label:'Calendário'},{icon:Users,label:'Alunos'},{icon:ClipboardList,label:'Treinos'},{icon:Settings,label:'Gestão'},{icon:MessageSquare,label:'Mural'}];
 
   const coachSelDayTpl=coachCalSel?tplByDate[coachCalSel]||null:null;
@@ -895,7 +1002,7 @@ export default function App(){
 
       {/* TopNav */}
       {isLoggedIn&&!isCoach&&(
-        <TopNav items={STUDENT_TABS} active={studentTab} setActive={i=>{setStudentTab(i);if(i===0)setView('dash');else if(i===1)setView('calendar');else if(i===2)setView('progress');else if(i===3)setView('perfil');else if(i===4)setView('mural');}}
+        <TopNav items={STUDENT_TABS} active={studentTab} setActive={i=>{setStudentTab(i);if(i===0)setView('dash');else if(i===1)setView('calendar');else if(i===2)setView('progress');else if(i===3)setView('mural');}}
           rightSlot={<button style={{...st.btnG,fontSize:11,color:MUTED,padding:'4px 8px'}} onClick={logout}>← Sair</button>}/>
       )}
       {isCoach&&(
@@ -933,40 +1040,116 @@ export default function App(){
         {/* DASHBOARD */}
         {view==='dash'&&(loading?<Spin/>:
           <div>
-            <h1 style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:3,color:ACC,margin:'0 0 14px'}}>BEM-VINDO, {student.split(' ')[0].toUpperCase()} 🌿</h1>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:14}}>
-              {[['🏋️','Total',stats.total],['🔥','Semana',stats.lastWeek],['⭐','Favorito',stats.favEx]].map(([ic,k,v])=>(
-                <div key={k} style={st.card}>
-                  <div style={{fontSize:18,marginBottom:2,textAlign:'center'}}>{ic}</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:ACC,lineHeight:1,textAlign:'center'}}>{v}</div>
-                  <div style={{fontSize:9,color:MUTED,letterSpacing:1,textTransform:'uppercase',marginTop:2,textAlign:'center'}}>{k}</div>
-                </div>
-              ))}
-            </div>
-            <GlassCalendar logMap={logMap} tplMap={tplByDate} selDate={calSelDate} onDayClick={(key)=>{setCalSelDate(key);setStudentTab(1);setView('calendar');handleStudentDay(key);}}/>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,color:ACC,marginBottom:8}}>SESSÕES RECENTES</div>
-            {logs.slice(0,3).map(l=>(
-              <div key={l.id} style={{...st.card,cursor:'pointer'}} onClick={()=>{setCalSelDate(l.date);setCalPanel('log');setLogData(l);setStudentTab(1);setView('calendar');}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                  <div>
-                    <div style={{display:'flex',gap:7,alignItems:'center',marginBottom:3,flexWrap:'wrap'}}>
-                      <span style={{fontFamily:"'Bebas Neue'",fontSize:15}}>{l.template_name||'Treino'}</span>
-                      <span style={{fontSize:11,color:MUTED}}>📅 {l.date}</span>
-                      {hasPain(l)&&<span style={st.tagD}>⚠️</span>}
-                    </div>
-                    <div style={{fontSize:11,color:MUTED}}>{l.exercises?.filter(e=>e.name).slice(0,4).map(e=>e.name).join(' · ')}</div>
+            <h1 style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:3,color:ACC,margin:'0 0 14px'}}>OLÁ, {student.split(' ')[0].toUpperCase()} 🌿</h1>
+
+            {/* Card do atleta (perfil integrado) */}
+            <div style={{background:`linear-gradient(135deg,#0a1a00,#1a3300,#0a1a00)`,border:`2px solid ${ACC}`,borderRadius:16,padding:'22px',marginBottom:14,overflow:'hidden',position:'relative'}}>
+              <button style={{...st.btnS,position:'absolute',top:14,right:14,fontSize:11,padding:'5px 10px'}} onClick={()=>setView('profile-setup')}>✏️ Editar</button>
+              <div style={{display:'flex',gap:18,flexWrap:'wrap',alignItems:'flex-start'}}>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:9,letterSpacing:4,color:MUTED,marginBottom:2}}>PŌKAI MOVEMENT · ATLETA</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:2,lineHeight:1,marginBottom:7,paddingRight:70}}>{student}</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+                    {profile?.age&&<span style={st.tag}>{profile.age} anos</span>}
+                    {imc&&<span style={{...st.tag,background:'rgba(255,255,255,0.06)',color:MUTED}}>IMC {imc}</span>}
+                    {myGender&&<span style={{...st.tag,background:'rgba(255,255,255,0.06)',color:MUTED}}>{myGender==='F'?'♀ Feminino':'♂ Masculino'}</span>}
+                    <span style={{...st.tag,background:'rgba(141,198,63,0.06)'}}>🏋️ {stats.total}</span>
                   </div>
-                  {l.rpe&&<span style={st.tag}>RPE {l.rpe}</span>}
+                  <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                    {Object.entries(valencias).map(([k,v])=>(
+                      <div key={k} style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:9,color:MUTED,width:82,textTransform:'uppercase',letterSpacing:1}}>{VL[k]}</span>
+                        <div style={{flex:1,height:5,background:'rgba(255,255,255,0.08)',borderRadius:3,overflow:'hidden'}}><div style={{width:`${v}%`,height:'100%',background:vc(v),borderRadius:3}}/></div>
+                        <span style={{fontSize:12,fontWeight:700,color:vc(v),width:24,textAlign:'right',fontFamily:"'JetBrains Mono',monospace"}}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                {logs.length>0&&<div style={{width:180,height:180}}><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid stroke="rgba(141,198,63,0.15)"/><PolarAngleAxis dataKey="attr" tick={{fill:MUTED,fontSize:9,fontFamily:"'Outfit',sans-serif"}}/><Radar dataKey="value" stroke={ACC} fill={ACC} fillOpacity={0.18} strokeWidth={2}/></RadarChart></ResponsiveContainer></div>}
               </div>
-            ))}
+            </div>
+
+            {/* Registrar medidas + histórico */}
+            <div style={st.sect}>
+              <span style={st.sectT}>REGISTRAR MEDIDAS</span>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:10,alignItems:'flex-end',marginBottom:14}}>
+                <F label="Peso (kg)"><Inp value={newWeight} onChange={e=>setNewWeight(e.target.value)} type="number" placeholder="75.5"/></F>
+                <F label="% Gordura"><Inp value={newBF} onChange={e=>setNewBF(e.target.value)} type="number" placeholder="18.5"/></F>
+                <button style={{...st.btnP,marginBottom:14}} onClick={addWeightLog} disabled={loading}>Registrar</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:weightLogs.length?14:0}}>
+                {[['Peso',profile?.weight?profile.weight+' kg':'—'],['% Gordura',profile?.body_fat?profile.body_fat+'%':'—'],['Altura',profile?.height?profile.height+' cm':'—']].map(([k,v])=>(
+                  <div key={k} style={{background:SURF2,borderRadius:7,padding:'9px',textAlign:'center'}}><div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:ACC}}>{v}</div><div style={{fontSize:9,color:MUTED,textTransform:'uppercase'}}>{k}</div></div>
+                ))}
+              </div>
+              {weightLogs.length>0&&<>
+                <div style={{fontSize:9,color:MUTED,textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Histórico de medidas</div>
+                {[...weightLogs].reverse().slice(0,8).map((w,i)=>(
+                  <div key={w.id||i} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'6px 8px',borderBottom:`1px solid ${BDR}`}}>
+                    <span style={{color:MUTED,fontFamily:"'JetBrains Mono',monospace"}}>{fmtSessDate(w.date).dw} · {w.date}</span>
+                    <span style={{fontFamily:"'JetBrains Mono',monospace"}}>{w.weight} kg{w.body_fat?` · ${w.body_fat}%`:''}</span>
+                  </div>
+                ))}
+              </>}
+            </div>
+            {weightLogs.length>1&&<div style={st.sect}><span style={st.sectT}>EVOLUÇÃO DO PESO</span><ResponsiveContainer width="100%" height={160}><LineChart data={weightLogs} margin={{top:5,right:10,left:0,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke={BDR}/><XAxis dataKey="date" tick={{fill:MUTED,fontSize:9}} tickFormatter={d=>d.slice(5)}/><YAxis tick={{fill:MUTED,fontSize:10}} unit="kg" width={44} domain={['auto','auto']}/><Tooltip contentStyle={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:6,color:TEXT,fontSize:12}}/><Line type="monotone" dataKey="weight" stroke={ACC} strokeWidth={2.5} dot={{fill:ACC,r:3}}/></LineChart></ResponsiveContainer></div>}
+
+            {/* Calendário resumido */}
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,color:ACC,marginBottom:8}}>CALENDÁRIO</div>
+            <GlassCalendar logMap={logMap} tplMap={tplByDate} selDate={calSelDate} onDayClick={(key)=>{setCalSelDate(key);setStudentTab(1);setView('calendar');handleStudentDay(key);}}/>
+
+            {/* Sessões recentes */}
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,color:ACC,marginBottom:8}}>SESSÕES RECENTES</div>
+            {logs.length===0&&<p style={{color:MUTED,fontSize:13}}>Nenhum treino registrado ainda.</p>}
+            {logs.slice(0,4).map(l=>{const sd=fmtSessDate(l.date);return(
+              <div key={l.id} style={{...st.card,cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 16px'}} onClick={()=>{setCalSelDate(l.date);setCalPanel('log');setLogData(l);setStudentTab(1);setView('calendar');}}>
+                <div style={{fontSize:26,width:38,textAlign:'center',flexShrink:0}}>{muscleEmoji(l.template_name)}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,display:'flex',gap:7,alignItems:'center',flexWrap:'wrap'}}>{cleanSessName(l.template_name)}{hasPain(l)&&<span style={st.tagD}>⚠️ dor</span>}</div>
+                  <div style={{fontSize:11,color:MUTED,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[l.week,`${l.exercises?.filter(e=>e.name).length||0} exercícios`,l.rpe?`RPE ${l.rpe}`:''].filter(Boolean).join(' · ')}</div>
+                </div>
+                <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:ACC,letterSpacing:1}}>{sd.dw}</div><div style={{fontSize:10,color:MUTED}}>{sd.dm}</div></div>
+              </div>
+            );})}
           </div>
         )}
 
         {/* CALENDAR — student */}
         {view==='calendar'&&(
           <div>
-            <GlassCalendar logMap={logMap} tplMap={tplByDate} selDate={calSelDate} onDayClick={handleStudentDay}/>
+            {/* Faixa da semana */}
+            {(()=>{
+              const base=new Date();const dow=(base.getDay()+6)%7; // segunda=0
+              const mon=new Date(base);mon.setDate(base.getDate()-dow);
+              const days=Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+              return(
+                <div style={{...st.card,padding:'14px 16px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                    <span style={{fontFamily:"'Bebas Neue'",fontSize:14,letterSpacing:2,color:ACC}}>ESTA SEMANA</span>
+                    <button style={{...st.btnS,fontSize:11,padding:'5px 10px'}} onClick={()=>setWeekExpanded(v=>!v)}>{weekExpanded?'Recolher mês ▴':'Expandir mês ▾'}</button>
+                  </div>
+                  <div style={{display:'flex',gap:6}}>
+                    {days.map((d,i)=>{const key=toDateKey(d);const log=logMap[key];const tpl=tplByDate[key];const sel=calSelDate===key;const tod=isToday(d);
+                      return(
+                        <div key={i} onClick={()=>handleStudentDay(key,null,'new')} style={{flex:1,cursor:'pointer',background:sel||tod?'rgba(141,198,63,0.08)':SURF2,border:`1px solid ${sel||tod?ACC:BDR}`,borderRadius:10,padding:'9px 2px',textAlign:'center'}}>
+                          <div style={{fontSize:9,color:MUTED,textTransform:'uppercase',letterSpacing:1}}>{WD[d.getDay()]}</div>
+                          <div style={{fontFamily:"'Bebas Neue'",fontSize:18,marginTop:2,color:tod?ACC:TEXT}}>{d.getDate()}</div>
+                          <div style={{height:5,marginTop:3,display:'flex',justifyContent:'center'}}>{(log||tpl)&&<span style={{width:5,height:5,borderRadius:'50%',background:log?INFO:ACC}}/>}</div>
+                        </div>
+                      );})}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {weekExpanded&&<GlassCalendar logMap={logMap} tplMap={tplByDate} selDate={calSelDate} onDayClick={handleStudentDay}/>}
+
+            {calPanel==='empty'&&(
+              <div style={{...st.card,textAlign:'center',color:MUTED,fontSize:13}}>
+                <div style={{fontSize:12,marginBottom:8}}>Nenhum treino agendado em <strong style={{color:TEXT}}>{calSelDate}</strong>.</div>
+                <button style={st.btnS} onClick={()=>{const el=document.getElementById('buscar-treino');el&&el.scrollIntoView({behavior:'smooth'});}}>🔍 Buscar um treino ↓</button>
+              </div>
+            )}
 
             {calPanel==='tpl'&&currentCalTpl&&(
               <div style={{...st.card,border:`2px solid ${WARN}`,marginTop:0}}>
@@ -993,34 +1176,32 @@ export default function App(){
               </div>
             )}
 
-            {calPanel==='picker'&&(
-              <div style={{...st.card,border:`1px solid ${ACC}`,marginTop:0}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                  <div>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:18,letterSpacing:2,color:ACC}}>REGISTRAR TREINO</div>
-                    <div style={{fontSize:12,color:MUTED}}>📅 {calSelDate}</div>
-                  </div>
-                  <button style={st.btnG} onClick={()=>{setCalPanel(null);setCalSelDate(null);}}>✕</button>
-                </div>
-                {templates.length===0&&<p style={{color:MUTED,fontSize:13}}>Nenhum treino disponível ainda.</p>}
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  {templates.map(tpl=>(
-                    <div key={tpl.id} onClick={()=>startLog(tpl,calSelDate)} style={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:9,padding:'12px 16px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <div>
-                        <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:ACC}}>{tpl.name}</div>
-                        {tpl.description&&<div style={{fontSize:11,color:MUTED}}>{tpl.description}</div>}
-                        <div style={{fontSize:11,color:MUTED,marginTop:2}}>{tpl.exercises?.length} exercícios{tpl.scheduled_date?` · 📅 ${tpl.scheduled_date}`:''}</div>
-                      </div>
-                      <span style={{color:ACC,fontSize:18}}>→</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {calPanel==='log'&&currentCalLog&&(
               <LogDetail log={currentCalLog} onEdit={editLog} onDelete={deleteLog} onClose={()=>{setCalPanel(null);setCalSelDate(null);}}/>
             )}
+
+            {/* Buscar treino no banco (avulso) */}
+            <div id="buscar-treino" style={st.sect}>
+              <span style={st.sectT}>🔍 BUSCAR TREINO</span>
+              <p style={{fontSize:11,color:MUTED,margin:'-6px 0 10px'}}>Puxe qualquer treino do banco pra fazer avulso — ex: viajando. Inicia na data <strong style={{color:TEXT}}>{calSelDate||todayStr()}</strong>.</p>
+              <input style={{...st.inp,marginBottom:10}} value={tplSearch} onChange={e=>setTplSearch(e.target.value)} placeholder="Buscar por nome..."/>
+              {templates.length===0&&<p style={{color:MUTED,fontSize:13}}>Nenhum treino disponível ainda.</p>}
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {templates.filter(t=>(t.name||'').toLowerCase().includes(tplSearch.toLowerCase())||(t.description||'').toLowerCase().includes(tplSearch.toLowerCase())).map(tpl=>(
+                  <div key={tpl.id} onClick={()=>startLog(tpl,calSelDate||todayStr())} style={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:9,padding:'12px 16px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{display:'flex',gap:11,alignItems:'center',minWidth:0}}>
+                      <span style={{fontSize:22,flexShrink:0}}>{muscleEmoji(tpl.name)}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:1,color:ACC}}>{tpl.name}</div>
+                        {tpl.description&&<div style={{fontSize:11,color:MUTED}}>{tpl.description}</div>}
+                        <div style={{fontSize:11,color:MUTED,marginTop:2}}>{tpl.exercises?.length||0} exercícios{tpl.scheduled_date?` · 📅 ${tpl.scheduled_date}`:''}</div>
+                      </div>
+                    </div>
+                    <span style={{color:ACC,fontSize:18,flexShrink:0}}>→</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1096,21 +1277,25 @@ export default function App(){
           ];
           const cats=[...new Set(MEDALS.map(m=>m.cat))];
           const gotCount=MEDALS.filter(m=>m.got).length;
+          const rkMedals=['🥇','🥈','🥉'];
           return(
           <div>
+            {/* Faixa de nível compacta — clica pra expandir */}
+            <div onClick={()=>setShowLvlFull(v=>!v)} style={{...st.card,cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:9,letterSpacing:3,color:MUTED,textTransform:'uppercase'}}>Nível {lvlIdx+1} · {lvlData.name}</div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:lvlData.color,lineHeight:1}}>{student.split(' ')[0]}</div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <div style={{textAlign:'right'}}><div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:lvlData.color,lineHeight:1}}>{totalXP.toLocaleString('pt-BR')}</div><div style={{fontSize:9,color:MUTED}}>XP · {gotCount}/{MEDALS.length} 🏅</div></div>
+                <span style={{color:MUTED,fontSize:13}}>{showLvlFull?'▲':'▼'}</span>
+              </div>
+            </div>
+
+            {showLvlFull&&<>
             {/* Hero card */}
             <div style={{background:`linear-gradient(135deg,rgba(10,26,0,0.97),rgba(18,36,0,0.9))`,border:`2px solid ${lvlData.color}`,borderRadius:16,padding:'20px',marginBottom:14,position:'relative',overflow:'hidden'}}>
               <div style={{position:'absolute',top:-20,right:-20,fontSize:90,opacity:0.05,pointerEvents:'none'}}>⚔️</div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
-                <div>
-                  <div style={{fontSize:9,letterSpacing:4,color:MUTED,marginBottom:4,textTransform:'uppercase'}}>Nível {lvlIdx+1} · {lvlData.name}</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:2,color:lvlData.color,lineHeight:1}}>{student.split(' ')[0]}</div>
-                </div>
-                <div style={{textAlign:'right'}}>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:34,color:lvlData.color,lineHeight:1}}>{totalXP.toLocaleString('pt-BR')}</div>
-                  <div style={{fontSize:9,color:MUTED,letterSpacing:2}}>XP TOTAL</div>
-                </div>
-              </div>
               {lvlData.max!==Infinity&&<div style={{marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:MUTED,marginBottom:5}}>
                   <span>{xpInLvl} XP neste nível</span>
@@ -1155,56 +1340,56 @@ export default function App(){
 
             {/* Evolução por exercício — acordeão fechado por padrão */}
             {exNames.length>0&&<ExerciseAccordion exNames={exNames} selEx={selEx} setSelEx={setSelEx} progressData={progressData} st={st}/>}
+            </>}
+
+            {/* RANKING DO TESTE */}
+            <div style={st.sect}>
+              <span style={st.sectT}>🏆 RANKING DO TESTE</span>
+              {ranking.length===0?<p style={{color:MUTED,fontSize:13}}>Nenhum teste cadastrado ainda.</p>:(()=>{
+                const scored=ranking.filter(r=>r.score!=null&&(rankGender==='all'||r.genero===rankGender)).sort((a,b)=>b.score-a.score);
+                const pend=ranking.filter(r=>r.score==null&&(rankGender==='all'||r.genero===rankGender));
+                return(<>
+                  <div style={{display:'flex',gap:3,background:SURF2,borderRadius:999,padding:3,marginBottom:12}}>
+                    {[['all','Geral'],['M','♂ Masc.'],['F','♀ Fem.']].map(([g,lbl])=>(
+                      <button key={g} onClick={()=>setRankGender(g)} style={{flex:1,padding:'7px',border:'none',background:rankGender===g?ACC:'transparent',color:rankGender===g?'#000':MUTED,borderRadius:999,fontSize:12,fontWeight:700,cursor:'pointer'}}>{lbl}</button>
+                    ))}
+                  </div>
+                  {scored.map((r,i)=>(
+                    <div key={r.name} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 10px',borderRadius:9,marginBottom:5,border:`1px solid ${r.name===student?ACC:BDR}`,background:r.name===student?'rgba(141,198,63,0.08)':SURF2}}>
+                      <span style={{fontFamily:"'Bebas Neue'",fontSize:20,width:30,textAlign:'center',flexShrink:0}}>{i<3?rkMedals[i]:i+1}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600}}>{r.name}{r.name===student&&<span style={{color:MUTED,fontWeight:400}}> · você</span>}</div>
+                        <div style={{fontSize:10,color:MUTED}}>{r.genero==='F'?'♀':r.genero==='M'?'♂':''}{r.fases?.['Força']!=null?` · ${Math.round(r.fases['Força'])} força`:''}{r.fases?.['Resistência']!=null?` · ${Math.round(r.fases['Resistência'])} resist.`:''}</div>
+                      </div>
+                      <span style={{fontFamily:"'Bebas Neue'",fontSize:20,color:ACC}}>{r.score.toFixed(1)}</span>
+                    </div>
+                  ))}
+                  {pend.map(r=>(
+                    <div key={r.name} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 10px',borderRadius:9,marginBottom:5,border:`1px solid ${BDR}`,background:SURF2,opacity:0.6}}>
+                      <span style={{width:30,textAlign:'center',color:MUTED,flexShrink:0}}>–</span>
+                      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600}}>{r.name}</div></div>
+                      <span style={{fontSize:11,color:WARN}}>perfil incompleto</span>
+                    </div>
+                  ))}
+                </>);
+              })()}
+            </div>
+
+            {/* MEUS TESTES */}
+            <div style={st.sect}>
+              <span style={st.sectT}>📋 MEUS TESTES</span>
+              {myTests.length===0?<p style={{color:MUTED,fontSize:13}}>Você ainda não tem testes registrados. O professor cadastra após sua avaliação física.</p>:
+               openTestId?<TestDetail test={myTests.find(t=>t.id===openTestId)||myTests[0]} total={ranking.filter(r=>r.score!=null).length} onBack={()=>setOpenTestId(null)}/>:
+               myTests.map(t=>(
+                <div key={t.id} onClick={()=>setOpenTestId(t.id)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:SURF2,border:`1px solid ${BDR}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',marginBottom:8}}>
+                  <div><div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:ACC}}>Teste {t.date}</div><div style={{fontSize:11,color:MUTED,marginTop:2}}>{t.pontuacao_geral!=null?`Score ${t.pontuacao_geral}`:'Score pendente'}{t.posicao?` · #${t.posicao} no ranking`:''}</div></div>
+                  <span style={{color:ACC,fontSize:18}}>→</span>
+                </div>
+               ))}
+            </div>
           </div>
           );
         })())}
-
-        {/* PERFIL */}
-        {view==='perfil'&&(
-          <div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-              <h1 style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:3,color:ACC,margin:0}}>MEU PERFIL</h1>
-              <button style={st.btnS} onClick={()=>setView('profile-setup')}>✏️ Editar</button>
-            </div>
-            <div style={{background:`linear-gradient(135deg,#0a1a00,#1a3300,#0a1a00)`,border:`2px solid ${ACC}`,borderRadius:16,padding:'22px',marginBottom:16,overflow:'hidden',position:'relative'}}>
-              <div style={{display:'flex',gap:18,flexWrap:'wrap',alignItems:'flex-start'}}>
-                <div style={{flex:1,minWidth:180}}>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:9,letterSpacing:4,color:MUTED,marginBottom:2}}>PŌKAI MOVEMENT · ATLETA</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:30,letterSpacing:2,lineHeight:1,marginBottom:7}}>{student}</div>
-                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
-                    {profile?.age&&<span style={st.tag}>{profile.age} anos</span>}
-                    {imc&&<span style={{...st.tag,background:'rgba(255,255,255,0.06)',color:MUTED}}>IMC {imc}</span>}
-                    <span style={{...st.tag,background:'rgba(141,198,63,0.06)',color:ACC}}>🏋️ {stats.total}</span>
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                    {Object.entries(valencias).map(([k,v])=>(
-                      <div key={k} style={{display:'flex',alignItems:'center',gap:8}}>
-                        <span style={{fontSize:9,color:MUTED,width:82,textTransform:'uppercase',letterSpacing:1}}>{VL[k]}</span>
-                        <div style={{flex:1,height:5,background:'rgba(255,255,255,0.08)',borderRadius:3,overflow:'hidden'}}><div style={{width:`${v}%`,height:'100%',background:vc(v),borderRadius:3}}/></div>
-                        <span style={{fontSize:12,fontWeight:700,color:vc(v),width:24,textAlign:'right',fontFamily:"'JetBrains Mono',monospace"}}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {logs.length>0&&<div style={{width:190,height:190}}><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid stroke="rgba(141,198,63,0.15)"/><PolarAngleAxis dataKey="attr" tick={{fill:MUTED,fontSize:9,fontFamily:"'Outfit',sans-serif"}}/><Radar dataKey="value" stroke={ACC} fill={ACC} fillOpacity={0.18} strokeWidth={2}/></RadarChart></ResponsiveContainer></div>}
-              </div>
-            </div>
-            <div style={st.sect}>
-              <span style={st.sectT}>REGISTRAR MEDIDAS</span>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:10,alignItems:'flex-end'}}>
-                <F label="Peso (kg)"><Inp value={newWeight} onChange={e=>setNewWeight(e.target.value)} type="number" placeholder="75.5"/></F>
-                <F label="% Gordura"><Inp value={newBF} onChange={e=>setNewBF(e.target.value)} type="number" placeholder="18.5"/></F>
-                <button style={{...st.btnP,marginBottom:14}} onClick={addWeightLog} disabled={loading}>OK</button>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                {[['Peso',profile?.weight?profile.weight+' kg':'—'],['% Gordura',profile?.body_fat?profile.body_fat+'%':'—'],['Altura',profile?.height?profile.height+' cm':'—']].map(([k,v])=>(
-                  <div key={k} style={{background:SURF2,borderRadius:7,padding:'9px',textAlign:'center'}}><div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:ACC}}>{v}</div><div style={{fontSize:9,color:MUTED,textTransform:'uppercase'}}>{k}</div></div>
-                ))}
-              </div>
-            </div>
-            {weightLogs.length>1&&<div style={st.sect}><span style={st.sectT}>EVOLUÇÃO DO PESO</span><ResponsiveContainer width="100%" height={160}><LineChart data={weightLogs} margin={{top:5,right:10,left:0,bottom:5}}><CartesianGrid strokeDasharray="3 3" stroke={BDR}/><XAxis dataKey="date" tick={{fill:MUTED,fontSize:9}} tickFormatter={d=>d.slice(5)}/><YAxis tick={{fill:MUTED,fontSize:10}} unit="kg" width={44} domain={['auto','auto']}/><Tooltip contentStyle={{background:SURF2,border:`1px solid ${BDR}`,borderRadius:6,color:TEXT,fontSize:12}}/><Line type="monotone" dataKey="weight" stroke={ACC} strokeWidth={2.5} dot={{fill:ACC,r:3}}/></LineChart></ResponsiveContainer></div>}
-          </div>
-        )}
 
         {/* MURAL */}
         {view==='mural'&&(
