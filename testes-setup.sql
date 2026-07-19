@@ -27,15 +27,18 @@ create table if not exists testes (
   created_at text
 );
 
--- 4) Gênero dos alunos avaliados
-update students set genero='F' where id='Valentina Castilho de Araújo Paiva';
-update students set genero='F' where id='Gabriella Alencar';
-update students set genero='M' where id='Vilson Vedana';
-update students set genero='M' where id='Lucas Soares';
-update students set genero='M' where id='Rodrigo Barbosa Martins';
-update students set genero='M' where id='Gabriel A. N. Andrade';
-update students set genero='M' where id='Gustavo Tomás Pereira Santos';
-update students set genero='F' where id='Isabela Fioravanti';
+-- 4) Cadastro + gênero dos alunos avaliados
+--    (cria quem ainda não existe — Rodrigo e Gabriel — e define o gênero em todos)
+insert into students (id,name,genero) values
+  ('Valentina Castilho de Araújo Paiva','Valentina Castilho de Araújo Paiva','F'),
+  ('Gabriella Alencar','Gabriella Alencar','F'),
+  ('Vilson Vedana','Vilson Vedana','M'),
+  ('Lucas Linhares','Lucas Linhares','M'),
+  ('Rodrigo Barbosa Martins','Rodrigo Barbosa Martins','M'),
+  ('Gabriel Andrade','Gabriel Andrade','M'),
+  ('Gustavo Tomás Pereira Santos','Gustavo Tomás Pereira Santos','M'),
+  ('Isabela Fioravanti','Isabela Fioravanti','F')
+on conflict (id) do update set genero=excluded.genero;
 
 -- 5) Importação dos testes (1 registro por aluno por data)
 insert into testes (id,student_id,genero,date,provas,fases,pontuacao_geral,posicao,feedback_geral,observacoes,created_at) values (
@@ -60,7 +63,7 @@ insert into testes (id,student_id,genero,date,provas,fases,pontuacao_geral,posic
 ) on conflict (id) do update set provas=excluded.provas, fases=excluded.fases, pontuacao_geral=excluded.pontuacao_geral, posicao=excluded.posicao, feedback_geral=excluded.feedback_geral, observacoes=excluded.observacoes, genero=excluded.genero;
 
 insert into testes (id,student_id,genero,date,provas,fases,pontuacao_geral,posicao,feedback_geral,observacoes,created_at) values (
-  'teste_lucas_soares_2026-05-09', 'Lucas Soares', 'M', '2026-05-09',
+  'teste_lucas_linhares_2026-05-09', 'Lucas Linhares', 'M', '2026-05-09',
   '[{"id":"banco_wells","valor":27,"feedback":"27cm é forte."},{"id":"alcance_ombro","valor":4.5,"feedback":"4.5cm+ é positivo, boa mobilidade."},{"id":"agachamento","valor":97,"feedback":"97kg×5 (1.26x BW), igual ao Vilson que pesa 21kg a mais. Forte."},{"id":"paralela","valor":32,"feedback":"+32kg de lastro, nível bom."},{"id":"barra_fixa","valor":5,"feedback":"Apenas 5kg lastro com 4 reps. Desproporcional ao agachamento forte. Prioridade."},{"id":"flexao","valor":71,"feedback":"71 reps — melhor número absoluto da turma. #2 equalizado com boost de idade."},{"id":"burpee","valor":32,"feedback":"32 reps — bom, #2 equalizado."},{"id":"canivete","valor":45,"feedback":"45 reps — abaixo do potencial. Incluir L-sits e toes-to-bar."},{"id":"circuito","valor":144,"feedback":"3 rounds + 12 extras. Com 77kg deveria fazer mais dado o nível de resistência."}]'::jsonb,
   '{"Flexibilidade":63.2,"Força":87,"Resistência":66.6,"Circuito":59.7}'::jsonb,
   71.5, 4, 'Posição 4 no ranking geral (Score 71.5). Melhor flexão da turma — 71 reps em 2min, o número mais alto absoluto, e com boost de idade (38a, +6.5%) fica #2 equalizado. Boa flexibilidade. Agachamento pesado — 97kg×5 (1.26x BW), igual ao Vilson que pesa 21kg a mais. Equilíbrio entre fases. Pontos a desenvolver: circuito (3 rounds + 12 extras, deveria fazer mais), barra fixa fraca (só 5kg lastro com 4 reps, desproporcional ao agachamento). Recomendações: barra fixa é prioridade (weighted pull-ups progressivos, 3-4 séries de 5 com +10kg, +2.5kg/semana, alvo +15kg×5 em 2 meses); praticar o circuito específico 1x/mês; incluir L-sits e toes-to-bar para canivete.', 'Perfil: idade 38, peso 77kg, altura 175cm. Notas por fase (0-100): Flexibilidade 63.2, Força 87.0, Resistência 66.6, Circuito 59.7. Posição no ranking: 4.', '2026-05-09'
@@ -74,7 +77,7 @@ insert into testes (id,student_id,genero,date,provas,fases,pontuacao_geral,posic
 ) on conflict (id) do update set provas=excluded.provas, fases=excluded.fases, pontuacao_geral=excluded.pontuacao_geral, posicao=excluded.posicao, feedback_geral=excluded.feedback_geral, observacoes=excluded.observacoes, genero=excluded.genero;
 
 insert into testes (id,student_id,genero,date,provas,fases,pontuacao_geral,posicao,feedback_geral,observacoes,created_at) values (
-  'teste_gabriel_a_n_andrade_2026-05-09', 'Gabriel A. N. Andrade', 'M', '2026-05-09',
+  'teste_gabriel_andrade_2026-05-09', 'Gabriel Andrade', 'M', '2026-05-09',
   '[{"id":"banco_wells","valor":10,"feedback":"10cm."},{"id":"alcance_ombro","valor":0.25,"feedback":"0.25cm — quase zero. Alerta funcional. Com a força de upper body, risco alto de lesão de ombro. Prioridade crítica."},{"id":"agachamento","valor":74,"feedback":"74kg×11. #2 equalizado. No próximo teste buscar 90kg+ em 5 reps."},{"id":"paralela","valor":44,"feedback":"MAIOR nota de força da turma. +44kg com 74kg = 1.59x BW em dip. #1 equalizado."},{"id":"barra_fixa","valor":29,"feedback":"+29kg×7 reps — força-resistência de pull excepcional."},{"id":"flexao","valor":64,"feedback":"64 reps — forte."},{"id":"burpee","valor":23,"feedback":"23 reps — baixo. O condicionamento não acompanha a força. Treinar especificamente."},{"id":"canivete","valor":50,"feedback":"50 reps — forte, top 3."},{"id":"circuito","valor":148,"feedback":"3 rounds + 16 extras. Não condiz com o nível de força."}]'::jsonb,
   '{"Flexibilidade":18.1,"Força":98.8,"Resistência":56,"Circuito":57}'::jsonb,
   65.5, 6, 'Posição 6 no ranking geral (Score 65.5). MAIOR NOTA DE FORÇA DA TURMA (98.8/100) — paralela +44kg com 74kg de BW = 1.59x BW em dip; barra +29kg×7 reps mostra força-resistência de pull excepcional. Melhor relação força/peso da turma. Canivete forte (50 reps). Pontos críticos: flexibilidade péssima (18.1/100, ombro 0.25cm quase zero) — alerta funcional com risco alto de lesão de ombro dada a força de upper body; resistência geral fraca (burpee 23); circuito não condiz com o nível de força. Recomendações: PRIORIDADE CRÍTICA mobilidade de ombro (com 98.8 de força e 18.1 de flex o risco de lesão é real; rotina diária mínimo 10min: hang passivo 3×30s, peitoral door stretch, rotação externa com band); condicionamento aeróbico 2x/semana (AMRAP/EMOM 8-12min); treinar burpee especificamente; no próximo teste agachamento em 5 reps com carga maior (buscar 90kg+).', 'Perfil: idade 31, peso 74kg, altura 175cm. Notas por fase (0-100): Flexibilidade 18.1, Força 98.8, Resistência 56.0, Circuito 57.0. Posição no ranking: 6.', '2026-05-09'
